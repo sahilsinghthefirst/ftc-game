@@ -1,9 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   ArrowLeft,
+  BatteryCharging,
   Bot,
+  Box,
   CheckCircle2,
   ChevronRight,
   Crosshair,
@@ -14,9 +22,11 @@ import {
   MoveUp,
   PackageOpen,
   Play,
+  PlayCircle,
   RotateCcw,
+  Scale,
   ScanLine,
-  Sparkles,
+  ShieldCheck,
   Target,
   Trophy,
   Wrench,
@@ -30,11 +40,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
+import { Robot3DBay } from './robot-3d';
 
-type Category = 'drive' | 'collect' | 'carry' | 'reach' | 'score' | 'assist';
+type Category = AssemblyCategory;
 type Trait = 'speed' | 'control' | 'collect' | 'score';
 
 type Module = {
@@ -59,6 +69,66 @@ const categories: { id: Category; label: string; icon: typeof Gauge }[] = [
   { id: 'score', label: 'Score', icon: Target },
   { id: 'assist', label: 'Assist', icon: ScanLine },
 ];
+
+const buildInfo: Record<
+  Category,
+  {
+    plainName: string;
+    mount: string;
+    hardware: string;
+    lesson: string;
+    slotLabels: [string, string, string];
+  }
+> = {
+  drive: {
+    plainName: 'drivetrain',
+    mount: 'Lower chassis rails',
+    hardware: '4 motor plates · 8 shaft supports · M4 hardware',
+    lesson:
+      'Each wheel shaft is supported near both ends so it stays straight.',
+    slotLabels: ['Compact', 'Standard', 'Long'],
+  },
+  collect: {
+    plainName: 'collector',
+    mount: 'Front cross rail',
+    hardware: '2 angle brackets · 4 bolts · guarded motor wire',
+    lesson:
+      'The intake sits low and forward while its cable stays clear of the rollers.',
+    slotLabels: ['Low', 'Middle', 'Raised'],
+  },
+  carry: {
+    plainName: 'storage',
+    mount: 'Center deck',
+    hardware: '2 deck brackets · 4 bolts · clear polycarbonate shield',
+    lesson:
+      'Storage stays inside the frame so game pieces cannot fall into the electronics.',
+    slotLabels: ['Forward', 'Center', 'Rear'],
+  },
+  reach: {
+    plainName: 'lift',
+    mount: 'Rear tower',
+    hardware: '2 reinforced brackets · nested rails · motor service loop',
+    lesson:
+      'Tall mechanisms get braced on two sides and keep a loose loop of wire for motion.',
+    slotLabels: ['Inboard', 'Center', 'Outboard'],
+  },
+  score: {
+    plainName: 'scoring tool',
+    mount: 'Patterned tool plate',
+    hardware: '4-bolt pattern · servo link · removable end plate',
+    lesson:
+      'A patterned end plate lets teams swap scoring tools between tests.',
+    slotLabels: ['Left', 'Center', 'Right'],
+  },
+  assist: {
+    plainName: 'sensor',
+    mount: 'Protected sensor bracket',
+    hardware: '2-bolt bracket · signal cable · strain relief clip',
+    lesson:
+      'Sensors need a clear view, but they also need protection from robot contact.',
+    slotLabels: ['Front', 'Center', 'Rear'],
+  },
+};
 
 const modules: Module[] = [
   {
@@ -444,265 +514,58 @@ const traitLabels: { id: Trait; label: string }[] = [
   { id: 'score', label: 'Score' },
 ];
 
-function RobotPreview({ selected }: { selected: Record<Category, string> }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const parent = canvas?.parentElement;
-    if (!canvas || !parent) return;
-
-    const draw = () => {
-      const rect = parent.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(300, rect.width);
-      const height = Math.max(310, rect.height);
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.scale(dpr, dpr);
-      ctx.clearRect(0, 0, width, height);
-
-      const cx = width / 2;
-      const cy = height * 0.57;
-      ctx.strokeStyle = 'rgba(125, 211, 252, .13)';
-      ctx.lineWidth = 1;
-      for (let x = -height; x < width + height; x += 28) {
-        ctx.beginPath();
-        ctx.moveTo(x, height);
-        ctx.lineTo(x + height, 0);
-        ctx.stroke();
-      }
-      for (let x = 0; x < width + height; x += 28) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x - height, height);
-        ctx.stroke();
-      }
-
-      const shadow = ctx.createRadialGradient(
-        cx,
-        cy + 72,
-        20,
-        cx,
-        cy + 72,
-        170,
-      );
-      shadow.addColorStop(0, 'rgba(0,0,0,.5)');
-      shadow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = shadow;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 72, 175, 54, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      const drive = selected.drive;
-      const baseW =
-        drive === 'trailblazer' ? 235 : drive === 'orbit' ? 188 : 214;
-      const baseH = drive === 'anchor' ? 92 : 105;
-      ctx.fillStyle = '#071522';
-      ctx.strokeStyle = '#34566f';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.roundRect(cx - baseW / 2, cy - baseH / 2, baseW, baseH, 18);
-      ctx.fill();
-      ctx.stroke();
-
-      const wheelColor =
-        drive === 'comet'
-          ? '#f97316'
-          : drive === 'orbit'
-            ? '#38bdf8'
-            : '#b7f34a';
-      const wheelXs =
-        drive === 'trailblazer'
-          ? [-baseW / 2 - 7, 0, baseW / 2 + 7]
-          : [-baseW / 2 - 7, baseW / 2 + 7];
-      wheelXs.forEach((offset) => {
-        const ys =
-          offset === 0
-            ? [-baseH / 2 + 5, baseH / 2 - 5]
-            : [-baseH / 2 + 14, baseH / 2 - 14];
-        ys.forEach((yo) => {
-          ctx.fillStyle = wheelColor;
-          ctx.beginPath();
-          ctx.roundRect(cx + offset - 11, cy + yo - 18, 22, 36, 7);
-          ctx.fill();
-          ctx.fillStyle = 'rgba(5,15,24,.5)';
-          ctx.fillRect(cx + offset - 8, cy + yo - 3, 16, 6);
-        });
-      });
-
-      ctx.strokeStyle = '#7894a8';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(cx - baseW / 2 + 20, cy - 26);
-      ctx.lineTo(cx + baseW / 2 - 20, cy - 26);
-      ctx.moveTo(cx - baseW / 2 + 20, cy + 26);
-      ctx.lineTo(cx + baseW / 2 - 20, cy + 26);
-      ctx.stroke();
-
-      if (selected.collect === 'widewave' || selected.collect === 'twinflex') {
-        ctx.strokeStyle =
-          selected.collect === 'widewave' ? '#f97316' : '#b7f34a';
-        ctx.lineWidth = selected.collect === 'widewave' ? 14 : 9;
-        ctx.beginPath();
-        ctx.moveTo(cx - 70, cy + baseH / 2 + 28);
-        ctx.lineTo(cx + 70, cy + baseH / 2 + 28);
-        ctx.stroke();
-        if (selected.collect === 'twinflex') {
-          ctx.beginPath();
-          ctx.moveTo(cx - 64, cy + baseH / 2 + 43);
-          ctx.lineTo(cx + 64, cy + baseH / 2 + 43);
-          ctx.stroke();
-        }
-      } else {
-        ctx.fillStyle = selected.collect === 'pinpoint' ? '#fbbf24' : '#f97316';
-        ctx.beginPath();
-        ctx.moveTo(cx - 54, cy + baseH / 2);
-        ctx.lineTo(cx - 76, cy + baseH / 2 + 45);
-        ctx.lineTo(cx, cy + baseH / 2 + 28);
-        ctx.lineTo(cx + 76, cy + baseH / 2 + 45);
-        ctx.lineTo(cx + 54, cy + baseH / 2);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.fillStyle = selected.carry === 'stackpack' ? '#253f53' : '#183047';
-      const hopperH = selected.carry === 'stackpack' ? 96 : 55;
-      ctx.beginPath();
-      ctx.roundRect(cx - 54, cy - hopperH - 10, 108, hopperH, 10);
-      ctx.fill();
-      ctx.strokeStyle = '#4d7189';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(cx - 39, cy - hopperH + 6, 9, Math.max(18, hopperH - 32));
-
-      const reachHeight =
-        selected.reach === 'cascade'
-          ? 138
-          : selected.reach === 'elevator'
-            ? 112
-            : 88;
-      ctx.strokeStyle = '#dbe7ef';
-      ctx.lineWidth = selected.reach === 'swingarm' ? 10 : 7;
-      ctx.beginPath();
-      if (selected.reach === 'swingarm') {
-        ctx.moveTo(cx + 42, cy - 36);
-        ctx.lineTo(cx + 97, cy - reachHeight);
-      } else {
-        ctx.moveTo(cx + 54, cy - 18);
-        ctx.lineTo(cx + 54, cy - reachHeight);
-        ctx.moveTo(cx + 70, cy - 18);
-        ctx.lineTo(cx + 70, cy - reachHeight);
-      }
-      ctx.stroke();
-      if (selected.reach === 'turret') {
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(cx + 62, cy - 55, 31, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      ctx.fillStyle = selected.score === 'flywheel' ? '#f97316' : '#b7f34a';
-      ctx.beginPath();
-      ctx.roundRect(
-        cx + 28,
-        cy - reachHeight - 25,
-        selected.score === 'tiptray' ? 92 : 68,
-        38,
-        9,
-      );
-      ctx.fill();
-      if (selected.score === 'flywheel') {
-        ctx.fillStyle = '#06121d';
-        ctx.beginPath();
-        ctx.arc(cx + 48, cy - reachHeight - 6, 12, 0, Math.PI * 2);
-        ctx.arc(cx + 76, cy - reachHeight - 6, 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.fillStyle = selected.assist === 'coloreye' ? '#c084fc' : '#38bdf8';
-      ctx.beginPath();
-      ctx.arc(cx - 63, cy - 28, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 18;
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#dce9f1';
-      ctx.font = '600 11px ui-monospace, monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('ATLAS // 01', cx, cy + 6);
-    };
-
-    draw();
-    const resizeObserver = new ResizeObserver(draw);
-    resizeObserver.observe(parent);
-    return () => resizeObserver.disconnect();
-  }, [selected]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0"
-      aria-label="Preview of your assembled robot"
-    />
-  );
-}
-
 function HowItWorks() {
   return (
     <Dialog>
       <DialogTrigger
         render={<Button variant="outline" className="header-button" />}
+        aria-label="How FieldLab works"
       >
         <Wrench aria-hidden="true" /> <span>How it works</span>
       </DialogTrigger>
       <DialogContent className="how-dialog" showCloseButton>
         <DialogHeader>
-          <p className="eyebrow">YOUR FIRST MATCH</p>
-          <DialogTitle>Build it. Drive it. Improve it.</DialogTitle>
+          <p className="eyebrow">YOUR FIRST GARAGE CUP</p>
+          <DialogTitle>Pick it up. Bolt it on. Test it.</DialogTitle>
           <DialogDescription>
-            FieldLab turns the engineering loop used by FTC teams into a quick
-            single-player challenge.
+            FieldLab turns the build-and-test loop used by FIRST Tech Challenge
+            teams into a short, hands-on game.
           </DialogDescription>
         </DialogHeader>
         <div className="how-steps">
           <div>
             <span>01</span>
             <div>
-              <strong>Choose six modules</strong>
+              <strong>Pick up a real-looking subsystem</strong>
               <p>
-                Every module changes how your robot moves, collects, or scores.
+                Drag it from the parts tray to the pulsing mount on the robot.
               </p>
             </div>
           </div>
           <div>
             <span>02</span>
             <div>
-              <strong>Race Scout-7</strong>
+              <strong>Run a bench test</strong>
               <p>
-                Collect ARTIFACTS, match the color PATTERN, and return to BASE.
+                Watch the collector, slides, and scoring tool move before the
+                match.
               </p>
             </div>
           </div>
           <div>
             <span>03</span>
             <div>
-              <strong>Make one smart change</strong>
+              <strong>Drive, learn, and rebuild</strong>
               <p>
-                Use your results like an engineer, then try the improved robot.
+                Race Scout-7, read the pit notes, then make one smart change.
               </p>
             </div>
           </div>
         </div>
         <p className="unofficial-note">
-          Unofficial educational prototype created for FTC team outreach.
+          Unofficial educational prototype for FTC team outreach. FIRST® and
+          FIRST Tech Challenge® are trademarks of For Inspiration and
+          Recognition of Science and Technology (FIRST).
         </p>
       </DialogContent>
     </Dialog>
@@ -977,14 +840,39 @@ function Results({
 export function FieldLab() {
   const [category, setCategory] = useState<Category>('drive');
   const [selected, setSelected] = useState<Record<Category, string>>(starter);
-  const [snapNote, setSnapNote] = useState('Balanced Rookie blueprint loaded');
+  const [snapNote, setSnapNote] = useState(
+    'Balanced Rookie is on the bench. Pick up any part to start.',
+  );
   const [blueprint, setBlueprint] = useState('balanced');
+  const [dragging, setDragging] = useState<Module | null>(null);
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [dropHot, setDropHot] = useState(false);
+  const [snappingCategory, setSnappingCategory] = useState<Category | null>(
+    null,
+  );
+  const [mountSlots, setMountSlots] = useState<Record<Category, number>>({
+    drive: 1,
+    collect: 1,
+    carry: 1,
+    reach: 1,
+    score: 1,
+    assist: 0,
+  });
+  const [mechanismRunning, setMechanismRunning] = useState(false);
   const [phase, setPhase] = useState<
     'workshop' | 'briefing' | 'match' | 'results'
   >('workshop');
   const [difficulty, setDifficulty] = useState<Difficulty>('rival');
   const [result, setResult] = useState<MatchResult | null>(null);
   const selectedRef = useRef(selected);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    module: Module;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -993,6 +881,9 @@ export function FieldLab() {
   const currentModules = modules.filter(
     (module) => module.category === category,
   );
+  const activeSelected = modules.find(
+    (module) => module.id === selected[category],
+  )!;
   const selectedModules = useMemo(
     () =>
       Object.values(selected).map((id) =>
@@ -1030,10 +921,105 @@ export function FieldLab() {
     [selectedModules],
   );
 
-  const chooseModule = (module: Module) => {
+  const chooseModule = (
+    module: Module,
+    mode: 'drag' | 'tap' | 'tool' = 'tap',
+  ) => {
     setSelected((current) => ({ ...current, [module.category]: module.id }));
     setBlueprint('custom');
-    setSnapNote(`${module.name} snapped into place`);
+    setCategory(module.category);
+    setSnappingCategory(module.category);
+    setSnapNote(
+      mode === 'drag'
+        ? `${module.name} seated on the ${buildInfo[module.category].mount.toLowerCase()}. Brackets and bolts added.`
+        : `${module.name} installed. Try dragging the next part onto its mount.`,
+    );
+    window.setTimeout(() => setSnappingCategory(null), 620);
+  };
+
+  const pointIsOverStage = (x: number, y: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    return Boolean(
+      rect &&
+      x >= rect.left &&
+      x <= rect.right &&
+      y >= rect.top &&
+      y <= rect.bottom,
+    );
+  };
+
+  const startPartDrag = (
+    module: Module,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0) return;
+    dragRef.current = {
+      module,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCategory(module.category);
+    setDragging(module);
+    setDragPosition({ x: event.clientX, y: event.clientY });
+    setDropHot(pointIsOverStage(event.clientX, event.clientY));
+    setSnapNote(
+      `Carry ${module.name} to the pulsing ${buildInfo[module.category].mount.toLowerCase()}.`,
+    );
+  };
+
+  const movePartDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = dragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (
+      Math.hypot(
+        event.clientX - current.startX,
+        event.clientY - current.startY,
+      ) > 7
+    )
+      current.moved = true;
+    setDragPosition({ x: event.clientX, y: event.clientY });
+    setDropHot(pointIsOverStage(event.clientX, event.clientY));
+  };
+
+  const finishPartDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = dragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    const overStage = pointIsOverStage(event.clientX, event.clientY);
+    if (overStage) chooseModule(current.module, 'drag');
+    else if (!current.moved) chooseModule(current.module, 'tap');
+    else
+      setSnapNote(
+        `${current.module.name} returned to the tray. Drop it on the pulsing mount to install it.`,
+      );
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
+    setDragging(null);
+    setDropHot(false);
+  };
+
+  const cancelPartDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const current = dragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(null);
+    setDropHot(false);
+    setSnapNote('Part returned to the tray. Nothing changed.');
+  };
+
+  const runBenchTest = () => {
+    if (mechanismRunning) return;
+    setMechanismRunning(true);
+    setSnapNote(
+      `Bench test: ${activeSelected.name} is moving while the wire route stays clear.`,
+    );
+    window.setTimeout(() => {
+      setMechanismRunning(false);
+      setSnapNote('Bench test passed. The mechanism is ready for the arena.');
+    }, 1500);
   };
 
   const loadBlueprint = (id: string) => {
@@ -1041,7 +1027,7 @@ export function FieldLab() {
     if (!next) return;
     setSelected(next.loadout);
     setBlueprint(id);
-    setSnapNote(`${next.name} blueprint loaded`);
+    setSnapNote(`${next.name} is on the bench. Swap any subsystem you want.`);
   };
 
   useEffect(() => {
@@ -1203,176 +1189,333 @@ export function FieldLab() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="workshop-header">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <Bot aria-hidden="true" />
-          </div>
-          <div>
-            <p className="brand-name">FIELDLAB</p>
-            <p className="brand-kicker">AN FTC TEAM OUTREACH PROJECT</p>
-          </div>
+    <main className="pit-app">
+      <header className="pit-header">
+        <div className="pit-brand" aria-label="FieldLab FTC outreach workshop">
+          <span className="pit-brand-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="pit-wordmark">
+            <strong>FIELD</strong>
+            <b>/</b>LAB
+            <small>FIRST Tech Challenge outreach</small>
+          </span>
         </div>
-        <div className="header-status" aria-label="Current Garage Cup progress">
-          <span className="status-dot" />
-          <span>GARAGE CUP</span>
-          <strong>WORKSHOP</strong>
+        <div className="pit-progress" aria-label="Garage Cup progress">
+          <span className="is-current" aria-current="step">
+            <b>1</b> Build
+          </span>
+          <i />
+          <span>
+            <b>2</b> Shakedown
+          </span>
+          <i />
+          <span>
+            <b>3</b> Match
+          </span>
         </div>
         <HowItWorks />
       </header>
 
-      <div className="workshop-shell">
-        <section className="robot-bay" aria-labelledby="robot-heading">
-          <div className="bay-heading">
-            <div>
-              <p className="eyebrow">CURRENT BUILD / 01</p>
-              <h1 id="robot-heading">ATLAS</h1>
-            </div>
-            <div className="build-ready">
-              <span /> 6 MODULES ONLINE
-            </div>
-          </div>
-          <div className="robot-stage">
-            <div className="stage-corner stage-corner-tl" />
-            <div className="stage-corner stage-corner-br" />
-            <RobotPreview selected={selected} />
-            <div className="snap-toast" aria-live="polite">
-              <Sparkles aria-hidden="true" /> {snapNote}
-            </div>
-          </div>
-          <div className="blueprint-row" aria-label="Starter robot blueprints">
-            <span>BLUEPRINTS</span>
+      <section className="pit-titlebar">
+        <div>
+          <p className="team-label">FTC PIT WORKSHOP · ROBOT 01</p>
+          <h1>Build Atlas on a real mounting system.</h1>
+          <p>
+            Pick up a subsystem, find its pulsing bracket, and drop it onto the
+            robot. FieldLab handles the tiny hardware so you can focus on the
+            engineering choices.
+          </p>
+        </div>
+        <label className="starter-picker">
+          <span>Start from a team blueprint</span>
+          <select
+            value={blueprint}
+            onChange={(event) => loadBlueprint(event.target.value)}
+          >
+            {blueprint === 'custom' && (
+              <option value="custom">Custom build</option>
+            )}
             {blueprints.map((item) => (
-              <button
-                key={item.id}
-                className={blueprint === item.id ? 'is-active' : ''}
-                onClick={() => loadBlueprint(item.id)}
-              >
-                <strong>{item.name}</strong>
-                <small>{item.note}</small>
-              </button>
+              <option key={item.id} value={item.id}>
+                {item.name} — {item.note}
+              </option>
             ))}
+          </select>
+        </label>
+      </section>
+
+      <div className="pit-workspace">
+        <section className="assembly-panel" aria-labelledby="assembly-heading">
+          <header className="assembly-panel-heading">
+            <div>
+              <span className="bench-label">ASSEMBLY BAY A</span>
+              <h2 id="assembly-heading">Atlas · competition robot</h2>
+            </div>
+            <span className="fit-badge">
+              <ShieldCheck aria-hidden="true" /> Fits FTC-size pattern channel
+            </span>
+          </header>
+
+          <div
+            ref={stageRef}
+            className={`assembly-stage ${dropHot ? 'is-drop-hot' : ''}`}
+          >
+            <Robot3DBay
+              selected={selected}
+              activeCategory={category}
+              draggingCategory={dragging?.category ?? null}
+              snappingCategory={snappingCategory}
+              mountSlots={mountSlots}
+              mechanismRunning={mechanismRunning}
+            />
+            {dropHot && (
+              <div className="stage-drop-label">
+                Release to bolt on {dragging?.name}
+              </div>
+            )}
           </div>
-          <div className="bay-lower">
-            <div className="trait-grid">
-              {traitLabels.map((trait) => (
-                <div className="trait" key={trait.id}>
-                  <div className="trait-label">
-                    <span>{trait.label}</span>
-                    <strong>{traits[trait.id]}</strong>
+
+          <div className="assembly-console">
+            <div className="installed-part">
+              <PartIllustration
+                category={activeSelected.category}
+                id={activeSelected.id}
+                compact
+              />
+              <div>
+                <span>Installed {buildInfo[category].plainName}</span>
+                <strong>{activeSelected.name}</strong>
+                <small>{buildInfo[category].mount}</small>
+              </div>
+            </div>
+
+            <div className="mount-adjuster">
+              {category === 'drive' ? (
+                <>
+                  <span>Chassis geometry</span>
+                  <strong>Four-point, bearing-supported base</strong>
+                  <div className="fixed-rail" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                    <i />
                   </div>
-                  <div
-                    className="trait-pips"
-                    aria-label={`${trait.label}: ${traits[trait.id]} out of 12`}
-                  >
-                    {Array.from({ length: 12 }).map((_, index) => (
-                      <span
-                        key={index}
-                        className={index < traits[trait.id] ? 'active' : ''}
-                      />
+                </>
+              ) : (
+                <>
+                  <label htmlFor="mount-position">
+                    <span>Loosen · slide · tighten</span>
+                    <strong>Mount position</strong>
+                  </label>
+                  <input
+                    id="mount-position"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="1"
+                    value={mountSlots[category]}
+                    onChange={(event) =>
+                      setMountSlots((current) => ({
+                        ...current,
+                        [category]: Number(event.target.value),
+                      }))
+                    }
+                    aria-valuetext={
+                      buildInfo[category].slotLabels[mountSlots[category]]
+                    }
+                  />
+                  <div className="rail-labels" aria-hidden="true">
+                    {buildInfo[category].slotLabels.map((label) => (
+                      <span key={label}>{label}</span>
                     ))}
                   </div>
-                </div>
-              ))}
+                </>
+              )}
             </div>
-            <div className="resource-panel">
-              {(['weight', 'power', 'space'] as const).map((resource) => (
-                <div className="resource" key={resource}>
-                  <div>
-                    <span>{resource}</span>
-                    <strong>{resources[resource]} / 22</strong>
-                  </div>
-                  <Progress
-                    value={(resources[resource] / 22) * 100}
-                    aria-label={`${resource}: ${resources[resource]} of 22`}
-                  />
-                </div>
-              ))}
+
+            <button
+              className={`bench-test-button ${mechanismRunning ? 'is-running' : ''}`}
+              onClick={runBenchTest}
+              disabled={mechanismRunning}
+            >
+              <PlayCircle aria-hidden="true" />
+              <span>
+                <strong>
+                  {mechanismRunning ? 'Testing…' : 'Run bench test'}
+                </strong>
+                <small>Watch every mechanism move</small>
+              </span>
+            </button>
+          </div>
+
+          <div className="build-ticket">
+            <div>
+              <Wrench aria-hidden="true" />
+              <span>
+                <b>What connects it</b>
+                {buildInfo[category].hardware}
+              </span>
             </div>
+            <p aria-live="polite">{snapNote}</p>
+          </div>
+
+          <div className="trait-strip" aria-label="Robot performance traits">
+            {traitLabels.map((trait) => (
+              <div key={trait.id}>
+                <span>{trait.label}</span>
+                <strong>
+                  {traits[trait.id]}
+                  <small>/12</small>
+                </strong>
+                <i>
+                  <b style={{ width: `${(traits[trait.id] / 12) * 100}%` }} />
+                </i>
+              </div>
+            ))}
           </div>
         </section>
 
-        <aside className="parts-rack" aria-labelledby="rack-heading">
-          <div className="rack-heading">
+        <aside className="parts-drawer" aria-labelledby="parts-heading">
+          <header className="parts-heading">
             <div>
-              <p className="eyebrow">MODULE RACK</p>
-              <h2 id="rack-heading">Choose how it works</h2>
+              <span className="drawer-handle" aria-hidden="true" />
+              <p>Open parts drawer</p>
+              <h2 id="parts-heading">
+                Choose the {buildInfo[category].plainName}
+              </h2>
             </div>
-            <div className="part-count">
-              <strong>24</strong>
-              <span>PARTS</span>
+            <span className="part-total">
+              <b>24</b> real choices
+            </span>
+          </header>
+
+          <nav className="subsystem-selector" aria-label="Robot subsystems">
+            {categories.map((item, index) => {
+              const Icon = item.icon;
+              const picked = modules.find(
+                (module) => module.id === selected[item.id],
+              )!;
+              return (
+                <button
+                  key={item.id}
+                  className={category === item.id ? 'is-current' : ''}
+                  onClick={() => setCategory(item.id)}
+                  aria-pressed={category === item.id}
+                >
+                  <span>{index + 1}</span>
+                  <Icon aria-hidden="true" />
+                  <strong>{item.label}</strong>
+                  <small>
+                    {picked.name.replace(
+                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|Pinpoint|SideSweep|Low Rider|StackPack|BeltBridge|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Color|Range|Auto|Pathfinder)\s?/i,
+                      '',
+                    )}
+                  </small>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="parts-tray-heading">
+            <div>
+              <strong>Pick up a part</strong>
+              <span>
+                Drag it onto the highlighted{' '}
+                {buildInfo[category].mount.toLowerCase()}
+              </span>
             </div>
+            <span className="fit-key">
+              <i /> Fits this robot
+            </span>
           </div>
-          <p className="rack-help">
-            Pick a module and it will snap onto the highlighted mount.
-          </p>
-          <Tabs
-            value={category}
-            onValueChange={(value) => setCategory(value as Category)}
-            className="category-tabs"
-          >
-            <TabsList
-              className="category-list"
-              aria-label="Robot module categories"
-            >
-              {categories.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <TabsTrigger
-                    key={item.id}
-                    value={item.id}
-                    className="category-trigger"
-                  >
-                    <Icon aria-hidden="true" />
-                    <span>{item.label}</span>
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-          </Tabs>
-          <div className="module-list">
+
+          <div className="parts-tray">
             {currentModules.map((module) => {
               const isSelected = selected[module.category] === module.id;
               return (
                 <button
-                  className={`module-card ${isSelected ? 'is-selected' : ''}`}
+                  type="button"
+                  className={`part-tile ${isSelected ? 'is-installed' : ''}`}
                   key={module.id}
-                  onClick={() => chooseModule(module)}
                   aria-pressed={isSelected}
+                  aria-label={`${module.name}. ${isSelected ? 'Installed.' : ''} Drag to the robot or press Enter to install.`}
+                  onPointerDown={(event) => startPartDrag(module, event)}
+                  onPointerMove={movePartDrag}
+                  onPointerUp={finishPartDrag}
+                  onPointerCancel={cancelPartDrag}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      chooseModule(module, 'tap');
+                    }
+                  }}
                 >
-                  <span className="module-code">{module.code}</span>
-                  <span className="module-copy">
-                    <strong>{module.name}</strong>
-                    <span>{module.blurb}</span>
-                    <span className="module-trade">
-                      <b>+</b> {module.strength} <i>−</i> {module.tradeoff}
+                  <div className="part-tile-art">
+                    <PartIllustration
+                      category={module.category}
+                      id={module.id}
+                    />
+                    <span className="part-grip" aria-hidden="true">
+                      ••••
                     </span>
-                  </span>
-                  <span className="module-action">
-                    {isSelected ? 'ON ROBOT' : 'TRY IT'}
-                    <ChevronRight aria-hidden="true" />
-                  </span>
+                    {isSelected && (
+                      <span className="installed-sticker">
+                        <CheckCircle2 /> On Atlas
+                      </span>
+                    )}
+                  </div>
+                  <div className="part-tile-copy">
+                    <span className="part-code">{module.code}</span>
+                    <strong>{module.name}</strong>
+                    <p>{module.blurb}</p>
+                    <div>
+                      <b>{module.strength}</b>
+                      <i>{module.tradeoff}</i>
+                    </div>
+                  </div>
                 </button>
               );
             })}
           </div>
-          <div className="loadout-strip" aria-label="Selected robot modules">
-            {categories.map((item) => {
-              const picked = modules.find(
-                (module) => module.id === selected[item.id],
-              )!;
-              const Icon = item.icon;
-              return (
-                <div key={item.id} title={`${item.label}: ${picked.name}`}>
-                  <Icon aria-hidden="true" />
-                  <span>{picked.code.replace(/-.*/, '')}</span>
-                </div>
-              );
-            })}
+
+          <div className="pit-lesson">
+            <Lightbulb aria-hidden="true" />
+            <p>
+              <strong>Why teams build it this way</strong>
+              {buildInfo[category].lesson}
+            </p>
           </div>
+
+          <div
+            className="inspection-meters"
+            aria-label="Robot inspection resources"
+          >
+            <div>
+              <Scale aria-hidden="true" />
+              <span>
+                Weight<strong>{resources.weight} / 22</strong>
+              </span>
+            </div>
+            <div>
+              <BatteryCharging aria-hidden="true" />
+              <span>
+                Power<strong>{resources.power} / 22</strong>
+              </span>
+            </div>
+            <div>
+              <Box aria-hidden="true" />
+              <span>
+                Space<strong>{resources.space} / 22</strong>
+              </span>
+            </div>
+          </div>
+
           <Button
-            className="arena-button"
+            className="field-button"
             size="lg"
             onClick={() => setPhase('briefing')}
             disabled={
@@ -1381,13 +1524,49 @@ export function FieldLab() {
               resources.space > 22
             }
           >
-            ENTER TEST ARENA <Crosshair aria-hidden="true" />
+            <span>
+              <strong>Take Atlas to the field</strong>
+              <small>75 seconds · versus Scout-7</small>
+            </span>
+            <Crosshair aria-hidden="true" />
           </Button>
-          <p className="arena-note">
-            <span /> Next: learn the controls, then race Scout-7.
-          </p>
         </aside>
       </div>
+
+      {dragging && (
+        <div
+          className={`part-drag-ghost ${dropHot ? 'is-over-stage' : ''}`}
+          style={{ left: dragPosition.x, top: dragPosition.y }}
+          aria-hidden="true"
+        >
+          <PartIllustration
+            category={dragging.category}
+            id={dragging.id}
+            compact
+          />
+          <span>
+            <strong>{dragging.name}</strong>
+            {dropHot ? 'Release to install' : 'Carry to the robot'}
+          </span>
+        </div>
+      )}
+
+      <footer className="first-workshop-band">
+        <div>
+          <strong>THIS IS THE FTC ENGINEERING LOOP</strong>
+          <span>Build</span>
+          <i />
+          <span>Test</span>
+          <i />
+          <span>Learn</span>
+          <i />
+          <span>Improve</span>
+        </div>
+        <p>
+          Unofficial educational experience made for FIRST Tech Challenge team
+          outreach.
+        </p>
+      </footer>
     </main>
   );
 }

@@ -231,19 +231,25 @@ function drawRobot(
   ctx.save();
   ctx.translate(robot.x, robot.y);
   ctx.rotate(robot.angle + Math.PI / 2);
-  ctx.shadowColor = 'rgba(0,0,0,.45)';
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 8;
-  ctx.fillStyle = alliance === 'blue' ? '#208de3' : '#f45159';
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 6;
+  ctx.fillStyle = '#b9c1c3';
   ctx.beginPath();
-  ctx.roundRect(-27, -33, 54, 66, 10);
+  ctx.roundRect(-29, -35, 58, 70, 5);
   ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = '#091722';
-  ctx.fillRect(-23, -17, 46, 33);
-  ctx.fillStyle = '#dceaf2';
-  ctx.fillRect(-18, -12, 36, 4);
-  ctx.fillStyle = alliance === 'blue' ? '#8bd0ff' : '#ff9da2';
+  ctx.strokeStyle = '#39474d';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(-25, -31, 50, 62);
+  ctx.fillStyle = alliance === 'blue' ? '#2b88c7' : '#d84b50';
+  ctx.fillRect(-31, -27, 8, 54);
+  ctx.fillRect(23, -27, 8, 54);
+  ctx.fillStyle = '#243137';
+  ctx.fillRect(-20, -17, 40, 32);
+  ctx.fillStyle = '#dfe4e3';
+  ctx.fillRect(-15, -11, 30, 4);
+  ctx.fillStyle = alliance === 'blue' ? '#2b88c7' : '#d84b50';
   ctx.beginPath();
   ctx.moveTo(0, -43);
   ctx.lineTo(-12, -28);
@@ -251,7 +257,7 @@ function drawRobot(
   ctx.closePath();
   ctx.fill();
 
-  const wheelColor = selected?.drive === 'comet' ? '#ff8a31' : '#c9fa4f';
+  const wheelColor = selected?.drive === 'comet' ? '#e77032' : '#303a3f';
   ctx.fillStyle = wheelColor;
   [-24, 24].forEach((x) =>
     [-20, 20].forEach((y) => {
@@ -260,7 +266,7 @@ function drawRobot(
       ctx.fill();
     }),
   );
-  ctx.strokeStyle = selected?.collect === 'pinpoint' ? '#facc15' : '#ff8a31';
+  ctx.strokeStyle = selected?.collect === 'pinpoint' ? '#e0ac2b' : '#e77032';
   ctx.lineWidth = selected?.collect === 'twinflex' ? 6 : 9;
   ctx.beginPath();
   ctx.moveTo(-22, -39);
@@ -274,7 +280,7 @@ function drawRobot(
   }
 
   robot.carried.forEach((color, index) => {
-    ctx.fillStyle = color === 'P' ? '#b977ff' : '#b9f54b';
+    ctx.fillStyle = color === 'P' ? '#8052a6' : '#88a53a';
     ctx.beginPath();
     ctx.arc(-11 + index * 11, 4, 5, 0, Math.PI * 2);
     ctx.fill();
@@ -299,27 +305,38 @@ function drawField(
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
-  ctx.fillStyle = '#0b202c';
+  ctx.fillStyle = '#353b3d';
   ctx.fillRect(0, 0, FIELD_W, FIELD_H);
-  ctx.strokeStyle = 'rgba(151,190,210,.09)';
+  for (let x = 10; x < FIELD_W - 10; x += 50) {
+    for (let y = 10; y < FIELD_H - 10; y += 50) {
+      const tileX = Math.floor((x - 10) / 50);
+      const tileY = Math.floor((y - 10) / 50);
+      ctx.fillStyle = (tileX + tileY) % 2 === 0 ? '#393f41' : '#33393b';
+      ctx.fillRect(x, y, 50, 50);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.055)';
   ctx.lineWidth = 1;
-  for (let x = 20; x < FIELD_W; x += 40) {
+  for (let x = 10; x < FIELD_W; x += 50) {
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, FIELD_H);
+    ctx.moveTo(x, 10);
+    ctx.lineTo(x, FIELD_H - 10);
     ctx.stroke();
   }
-  for (let y = 10; y < FIELD_H; y += 40) {
+  for (let y = 10; y < FIELD_H; y += 50) {
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(FIELD_W, y);
+    ctx.moveTo(10, y);
+    ctx.lineTo(FIELD_W - 10, y);
     ctx.stroke();
   }
 
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = '#2a5064';
+  ctx.lineWidth = 12;
+  ctx.strokeStyle = '#aeb7b9';
   ctx.strokeRect(10, 10, FIELD_W - 20, FIELD_H - 20);
-  ctx.strokeStyle = 'rgba(237,247,251,.18)';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#606b70';
+  ctx.strokeRect(16, 16, FIELD_W - 32, FIELD_H - 32);
+  ctx.strokeStyle = 'rgba(238,213,126,.42)';
   ctx.lineWidth = 2;
   ctx.setLineDash([12, 10]);
   ctx.beginPath();
@@ -331,31 +348,31 @@ function drawField(
   const finalPulse =
     world.time <= 10 ? 0.7 + Math.sin(world.time * 8) * 0.2 : 0.32;
   [
-    [BLUE_BASE, '#2499ed'],
-    [RED_BASE, '#f4525a'],
+    [BLUE_BASE, '#2d8bc8'],
+    [RED_BASE, '#d84b50'],
   ].forEach(([base, color]) => {
     const point = base as { x: number; y: number };
     ctx.globalAlpha = finalPulse;
     ctx.fillStyle = color as string;
     ctx.beginPath();
-    ctx.roundRect(point.x - 76, point.y - 54, 152, 108, 15);
+    ctx.roundRect(point.x - 76, point.y - 54, 152, 108, 7);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.strokeStyle = color as string;
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.72)';
-    ctx.font = '700 12px ui-monospace, monospace';
+    ctx.fillStyle = '#f1eee5';
+    ctx.font = '700 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('BASE', point.x, point.y + 4);
   });
 
   [
-    [BLUE_GOAL, '#2499ed', 'BLUE GOAL'],
-    [RED_GOAL, '#f4525a', 'RED GOAL'],
+    [BLUE_GOAL, '#2d8bc8', 'BLUE GOAL'],
+    [RED_GOAL, '#d84b50', 'RED GOAL'],
   ].forEach(([goal, color, label]) => {
     const point = goal as { x: number; y: number };
-    ctx.fillStyle = 'rgba(4,12,18,.7)';
+    ctx.fillStyle = 'rgba(29,35,38,.82)';
     ctx.strokeStyle = color as string;
     ctx.lineWidth = 5;
     ctx.beginPath();
@@ -363,15 +380,18 @@ function drawField(
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = color as string;
-    ctx.font = '700 12px ui-monospace, monospace';
+    ctx.font = '700 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(label as string, point.x, point.y + 4);
   });
 
   ctx.save();
   ctx.translate(500, 326);
-  ctx.fillStyle = '#132f40';
-  ctx.strokeStyle = '#577a8e';
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
+  ctx.shadowBlur = 9;
+  ctx.shadowOffsetY = 6;
+  ctx.fillStyle = '#65747b';
+  ctx.strokeStyle = '#aeb8bb';
   ctx.lineWidth = 3;
   ctx.beginPath();
   for (let i = 0; i < 6; i += 1) {
@@ -384,39 +404,107 @@ function drawField(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#89aabd';
-  ctx.font = '700 11px ui-monospace, monospace';
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#e4e7e4';
+  ctx.font = '700 11px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('OBELISK', 0, 4);
   ctx.restore();
 
-  if (selected.assist === 'pathfinder') {
-    const activePiece = world.pieces
-      .filter((piece) => piece.active)
-      .sort((a, b) => distance(world.player, a) - distance(world.player, b))[0];
-    if (activePiece) {
-      ctx.strokeStyle = 'rgba(201,250,79,.55)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([8, 10]);
+  const activePieces = world.pieces
+    .filter((piece) => piece.active)
+    .sort((a, b) => distance(world.player, a) - distance(world.player, b));
+  const nearestPiece = activePieces[0];
+
+  if (selected.assist === 'pathfinder' && nearestPiece) {
+    ctx.strokeStyle = 'rgba(238,184,48,.78)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 10]);
+    ctx.beginPath();
+    ctx.moveTo(world.player.x, world.player.y);
+    ctx.lineTo(nearestPiece.x, nearestPiece.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (selected.assist === 'coloreye') {
+    const expectedColor = PATTERN[world.playerSequence % PATTERN.length];
+    const patternPiece = activePieces.find(
+      (piece) => piece.color === expectedColor,
+    );
+    if (patternPiece) {
+      ctx.save();
+      ctx.strokeStyle = '#f0bf36';
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#f0bf36';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(patternPiece.x, patternPiece.y, 23, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  if (selected.assist === 'range') {
+    const guideRadius =
+      selected.reach === 'cascade'
+        ? 150
+        : selected.reach === 'turret'
+          ? 138
+          : selected.reach === 'elevator'
+            ? 120
+            : 108;
+    ctx.strokeStyle = 'rgba(89,186,223,.82)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 8]);
+    ctx.beginPath();
+    ctx.arc(BLUE_GOAL.x, BLUE_GOAL.y, guideRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (selected.assist === 'align') {
+    const target = world.player.carried.length > 0 ? BLUE_GOAL : nearestPiece;
+    if (target) {
+      const angle = Math.atan2(
+        target.y - world.player.y,
+        target.x - world.player.x,
+      );
+      ctx.strokeStyle = 'rgba(240,191,54,.9)';
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(world.player.x, world.player.y);
-      ctx.lineTo(activePiece.x, activePiece.y);
+      ctx.lineTo(
+        world.player.x + Math.cos(angle) * 54,
+        world.player.y + Math.sin(angle) * 54,
+      );
       ctx.stroke();
-      ctx.setLineDash([]);
     }
   }
 
   world.pieces.forEach((piece) => {
     if (!piece.active) return;
-    ctx.shadowColor = piece.color === 'P' ? '#a855f7' : '#9be63f';
-    ctx.shadowBlur = 13;
-    ctx.fillStyle = piece.color === 'P' ? '#a966ef' : '#b6ed4e';
+    ctx.shadowColor = 'rgba(0,0,0,.38)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = piece.color === 'P' ? '#8153a8' : '#8baa3c';
     ctx.beginPath();
-    ctx.arc(piece.x, piece.y, 14, 0, Math.PI * 2);
+    for (let side = 0; side < 8; side += 1) {
+      const angle = (side / 8) * Math.PI * 2 - Math.PI / 8;
+      const px = piece.x + Math.cos(angle) * 15;
+      const py = piece.y + Math.sin(angle) * 15;
+      if (side === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = piece.color === 'P' ? '#f0dcff' : '#173008';
-    ctx.font = '800 10px ui-monospace, monospace';
+    ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = piece.color === 'P' ? '#b89acd' : '#bfd477';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#f6f2e8';
+    ctx.font = '800 10px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(piece.color, piece.x, piece.y + 3.5);
   });
@@ -499,7 +587,7 @@ export function GameArena({
         : selected.reach === 'elevator'
           ? 120
           : 108;
-  const speed =
+  const baseSpeed =
     selected.drive === 'comet'
       ? 275
       : selected.drive === 'orbit'
@@ -507,6 +595,8 @@ export function GameArena({
         : selected.drive === 'trailblazer'
           ? 220
           : 205;
+  const speed = baseSpeed * (selected.assist === 'align' ? 0.94 : 1);
+  const alignTolerance = selected.assist === 'align' ? 12 : 0;
   const scoreDelay =
     selected.score === 'burst'
       ? 0.22
@@ -518,6 +608,14 @@ export function GameArena({
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          'button, input, select, textarea, a, [contenteditable="true"]',
+        )
+      )
+        return;
       if (
         [
           'ArrowUp',
@@ -537,11 +635,20 @@ export function GameArena({
       )
         event.preventDefault();
       keysRef.current.add(event.key.toLowerCase());
-      if (event.key === 'Escape') setPaused((value) => !value);
+      if (event.key === 'Escape' && !event.repeat) setPaused((value) => !value);
     };
     const up = (event: KeyboardEvent) =>
       keysRef.current.delete(event.key.toLowerCase());
-    const blur = () => keysRef.current.clear();
+    const blur = () => {
+      keysRef.current.clear();
+      touchRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        action: false,
+      };
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
@@ -633,7 +740,8 @@ export function GameArena({
       resolveObstacle(world.player);
 
       const action = keys.has(' ') || keys.has('space') || touch.action;
-      const nearGoal = distance(world.player, BLUE_GOAL) <= scoreRadius;
+      const nearGoal =
+        distance(world.player, BLUE_GOAL) <= scoreRadius + alignTolerance;
       const nearestPiece = world.pieces
         .filter((piece) => piece.active)
         .sort(
@@ -641,26 +749,31 @@ export function GameArena({
         )[0];
       if (action && world.player.cooldown <= 0) {
         if (nearGoal && world.player.carried.length > 0) {
-          const color = world.player.carried.shift()!;
-          const expected = PATTERN[world.playerSequence % PATTERN.length];
-          const match = color === expected;
-          const points = match ? 8 : 5;
-          world.playerScore += points;
-          world.playerSequence += 1;
-          world.scored += 1;
-          if (match) world.patternMatches += 1;
-          world.player.cooldown =
-            selected.score === 'tiptray' ? 0.18 : scoreDelay;
-          emitBurst(
-            world,
-            BLUE_GOAL.x + 30,
-            BLUE_GOAL.y,
-            color === 'P' ? '#b977ff' : '#b9f54b',
-            `+${points}`,
-          );
+          const scoredColors =
+            selected.score === 'tiptray'
+              ? world.player.carried.splice(0)
+              : [world.player.carried.shift()!];
+          scoredColors.forEach((color, index) => {
+            const expected = PATTERN[world.playerSequence % PATTERN.length];
+            const match = color === expected;
+            const points = match ? 8 : 5;
+            world.playerScore += points;
+            world.playerSequence += 1;
+            world.scored += 1;
+            if (match) world.patternMatches += 1;
+            emitBurst(
+              world,
+              BLUE_GOAL.x + 30,
+              BLUE_GOAL.y + index * 22,
+              color === 'P' ? '#b977ff' : '#b9f54b',
+              `+${points}`,
+            );
+          });
+          world.player.cooldown = scoreDelay;
         } else if (
           nearestPiece &&
-          distance(world.player, nearestPiece) <= pickupRadius &&
+          distance(world.player, nearestPiece) <=
+            pickupRadius + alignTolerance &&
           world.player.carried.length < capacity
         ) {
           nearestPiece.active = false;
@@ -866,6 +979,7 @@ export function GameArena({
   }, [
     capacity,
     difficulty,
+    alignTolerance,
     pickupRadius,
     scoreDelay,
     scoreRadius,
@@ -887,6 +1001,10 @@ export function GameArena({
 
   return (
     <main className="match-screen">
+      <output className="sr-only" aria-live="polite" aria-atomic="true">
+        {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
+        {hud.botScore}. Carrying {hud.carried} of {hud.capacity} artifacts.
+      </output>
       <header className="match-header">
         <Button variant="ghost" className="match-back" onClick={onWorkshop}>
           <ArrowLeft /> Workshop
@@ -976,43 +1094,98 @@ export function GameArena({
           <div className="touch-controls" aria-label="Touch controls">
             <div className="touch-pad">
               <button
+                type="button"
                 aria-label="Drive up"
                 onPointerDown={() => setTouch('up', true)}
                 onPointerUp={() => setTouch('up', false)}
+                onPointerCancel={() => setTouch('up', false)}
+                onLostPointerCapture={() => setTouch('up', false)}
                 onPointerLeave={() => setTouch('up', false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setTouch('up', true);
+                  }
+                }}
+                onKeyUp={() => setTouch('up', false)}
+                onBlur={() => setTouch('up', false)}
               >
                 <ArrowUp />
               </button>
               <button
+                type="button"
                 aria-label="Drive left"
                 onPointerDown={() => setTouch('left', true)}
                 onPointerUp={() => setTouch('left', false)}
+                onPointerCancel={() => setTouch('left', false)}
+                onLostPointerCapture={() => setTouch('left', false)}
                 onPointerLeave={() => setTouch('left', false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setTouch('left', true);
+                  }
+                }}
+                onKeyUp={() => setTouch('left', false)}
+                onBlur={() => setTouch('left', false)}
               >
                 <ArrowLeft />
               </button>
               <button
+                type="button"
                 aria-label="Drive down"
                 onPointerDown={() => setTouch('down', true)}
                 onPointerUp={() => setTouch('down', false)}
+                onPointerCancel={() => setTouch('down', false)}
+                onLostPointerCapture={() => setTouch('down', false)}
                 onPointerLeave={() => setTouch('down', false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setTouch('down', true);
+                  }
+                }}
+                onKeyUp={() => setTouch('down', false)}
+                onBlur={() => setTouch('down', false)}
               >
                 <ArrowDown />
               </button>
               <button
+                type="button"
                 aria-label="Drive right"
                 onPointerDown={() => setTouch('right', true)}
                 onPointerUp={() => setTouch('right', false)}
+                onPointerCancel={() => setTouch('right', false)}
+                onLostPointerCapture={() => setTouch('right', false)}
                 onPointerLeave={() => setTouch('right', false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setTouch('right', true);
+                  }
+                }}
+                onKeyUp={() => setTouch('right', false)}
+                onBlur={() => setTouch('right', false)}
               >
                 <ArrowRight />
               </button>
             </div>
             <button
+              type="button"
               className="action-pad"
               onPointerDown={() => setTouch('action', true)}
               onPointerUp={() => setTouch('action', false)}
+              onPointerCancel={() => setTouch('action', false)}
+              onLostPointerCapture={() => setTouch('action', false)}
               onPointerLeave={() => setTouch('action', false)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setTouch('action', true);
+                }
+              }}
+              onKeyUp={() => setTouch('action', false)}
+              onBlur={() => setTouch('action', false)}
             >
               <Zap />
               ACTION
