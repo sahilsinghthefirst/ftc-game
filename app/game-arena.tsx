@@ -11,6 +11,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { createArenaScene, type CameraMode } from './arena-scene';
+import type { AssemblyCategory } from './assembly-bay';
 
 export type Difficulty = 'rookie' | 'rival' | 'ace';
 
@@ -25,6 +27,7 @@ export type MatchResult = {
 
 type ArenaProps = {
   selected: Record<string, string>;
+  mountSlots: Record<AssemblyCategory, number>;
   difficulty: Difficulty;
   onFinish: (result: MatchResult) => void;
   onWorkshop: () => void;
@@ -58,7 +61,7 @@ type Particle = {
   size: number;
   text?: string;
 };
-type World = {
+export type World = {
   player: Robot;
   bot: Robot;
   pieces: Piece[];
@@ -144,13 +147,18 @@ function createWorld(): World {
       carried: [],
       cooldown: 0,
     },
-    pieces: pieceLayout.map(([x, y, color], id) => ({
-      id,
-      x,
-      y,
-      color,
-      active: true,
-    })),
+    pieces: pieceLayout.map(([x, y, color], id) => {
+      const dx = x - 500,
+        dy = y - 326,
+        radius = Math.hypot(dx, dy);
+      return {
+        id,
+        x: radius < 105 ? 500 + (dx / radius) * 110 : x,
+        y: radius < 105 ? 326 + (dy / radius) * 110 : y,
+        color,
+        active: true,
+      };
+    }),
     particles: [],
     time: MATCH_TIME,
     playerScore: 0,
@@ -203,335 +211,34 @@ function emitBurst(
 }
 
 function resolveObstacle(robot: Robot) {
-  const ox = 500;
-  const oy = 326;
-  const radius = 76;
-  const dx = robot.x - ox;
-  const dy = robot.y - oy;
-  const d = Math.hypot(dx, dy);
-  if (d < radius + 29) {
-    const nx = dx / Math.max(d, 1);
-    const ny = dy / Math.max(d, 1);
-    robot.x = ox + nx * (radius + 29);
-    robot.y = oy + ny * (radius + 29);
-    const dot = robot.vx * nx + robot.vy * ny;
-    if (dot < 0) {
-      robot.vx -= dot * nx;
-      robot.vy -= dot * ny;
+  for (const obstacle of [
+    { x: 500, y: 326, radius: 76 },
+    { ...BLUE_GOAL, radius: 45 },
+    { ...RED_GOAL, radius: 45 },
+  ]) {
+    const ox = obstacle.x;
+    const oy = obstacle.y;
+    const radius = obstacle.radius;
+    const dx = robot.x - ox;
+    const dy = robot.y - oy;
+    const d = Math.hypot(dx, dy);
+    if (d < radius + 29) {
+      const nx = dx / Math.max(d, 1);
+      const ny = dy / Math.max(d, 1);
+      robot.x = ox + nx * (radius + 29);
+      robot.y = oy + ny * (radius + 29);
+      const dot = robot.vx * nx + robot.vy * ny;
+      if (dot < 0) {
+        robot.vx -= dot * nx;
+        robot.vy -= dot * ny;
+      }
     }
   }
-}
-
-function drawRobot(
-  ctx: CanvasRenderingContext2D,
-  robot: Robot,
-  alliance: 'blue' | 'red',
-  selected?: Record<string, string>,
-) {
-  ctx.save();
-  ctx.translate(robot.x, robot.y);
-  ctx.rotate(robot.angle + Math.PI / 2);
-  ctx.shadowColor = 'rgba(0,0,0,.35)';
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = '#b9c1c3';
-  ctx.beginPath();
-  ctx.roundRect(-29, -35, 58, 70, 5);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = '#39474d';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(-25, -31, 50, 62);
-  ctx.fillStyle = alliance === 'blue' ? '#2b88c7' : '#d84b50';
-  ctx.fillRect(-31, -27, 8, 54);
-  ctx.fillRect(23, -27, 8, 54);
-  ctx.fillStyle = '#243137';
-  ctx.fillRect(-20, -17, 40, 32);
-  ctx.fillStyle = '#dfe4e3';
-  ctx.fillRect(-15, -11, 30, 4);
-  ctx.fillStyle = alliance === 'blue' ? '#2b88c7' : '#d84b50';
-  ctx.beginPath();
-  ctx.moveTo(0, -43);
-  ctx.lineTo(-12, -28);
-  ctx.lineTo(12, -28);
-  ctx.closePath();
-  ctx.fill();
-
-  const wheelColor = selected?.drive === 'comet' ? '#e77032' : '#303a3f';
-  ctx.fillStyle = wheelColor;
-  [-24, 24].forEach((x) =>
-    [-20, 20].forEach((y) => {
-      ctx.beginPath();
-      ctx.roundRect(x - 6, y - 10, 12, 20, 4);
-      ctx.fill();
-    }),
-  );
-  ctx.strokeStyle = selected?.collect === 'pinpoint' ? '#e0ac2b' : '#e77032';
-  ctx.lineWidth = selected?.collect === 'twinflex' ? 6 : 9;
-  ctx.beginPath();
-  ctx.moveTo(-22, -39);
-  ctx.lineTo(22, -39);
-  ctx.stroke();
-  if (selected?.collect === 'twinflex') {
-    ctx.beginPath();
-    ctx.moveTo(-19, -47);
-    ctx.lineTo(19, -47);
-    ctx.stroke();
-  }
-
-  robot.carried.forEach((color, index) => {
-    ctx.fillStyle = color === 'P' ? '#8052a6' : '#88a53a';
-    ctx.beginPath();
-    ctx.arc(-11 + index * 11, 4, 5, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.restore();
-}
-
-function drawField(
-  ctx: CanvasRenderingContext2D,
-  world: World,
-  selected: Record<string, string>,
-  width: number,
-  height: number,
-  dpr: number,
-) {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  const scale = Math.min(width / FIELD_W, height / FIELD_H);
-  const offsetX = (width - FIELD_W * scale) / 2;
-  const offsetY = (height - FIELD_H * scale) / 2;
-  ctx.save();
-  ctx.translate(offsetX, offsetY);
-  ctx.scale(scale, scale);
-
-  ctx.fillStyle = '#353b3d';
-  ctx.fillRect(0, 0, FIELD_W, FIELD_H);
-  for (let x = 10; x < FIELD_W - 10; x += 50) {
-    for (let y = 10; y < FIELD_H - 10; y += 50) {
-      const tileX = Math.floor((x - 10) / 50);
-      const tileY = Math.floor((y - 10) / 50);
-      ctx.fillStyle = (tileX + tileY) % 2 === 0 ? '#393f41' : '#33393b';
-      ctx.fillRect(x, y, 50, 50);
-    }
-  }
-  ctx.strokeStyle = 'rgba(255,255,255,.055)';
-  ctx.lineWidth = 1;
-  for (let x = 10; x < FIELD_W; x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, 10);
-    ctx.lineTo(x, FIELD_H - 10);
-    ctx.stroke();
-  }
-  for (let y = 10; y < FIELD_H; y += 50) {
-    ctx.beginPath();
-    ctx.moveTo(10, y);
-    ctx.lineTo(FIELD_W - 10, y);
-    ctx.stroke();
-  }
-
-  ctx.lineWidth = 12;
-  ctx.strokeStyle = '#aeb7b9';
-  ctx.strokeRect(10, 10, FIELD_W - 20, FIELD_H - 20);
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = '#606b70';
-  ctx.strokeRect(16, 16, FIELD_W - 32, FIELD_H - 32);
-  ctx.strokeStyle = 'rgba(238,213,126,.42)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([12, 10]);
-  ctx.beginPath();
-  ctx.moveTo(FIELD_W / 2, 18);
-  ctx.lineTo(FIELD_W / 2, FIELD_H - 18);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const finalPulse =
-    world.time <= 10 ? 0.7 + Math.sin(world.time * 8) * 0.2 : 0.32;
-  [
-    [BLUE_BASE, '#2d8bc8'],
-    [RED_BASE, '#d84b50'],
-  ].forEach(([base, color]) => {
-    const point = base as { x: number; y: number };
-    ctx.globalAlpha = finalPulse;
-    ctx.fillStyle = color as string;
-    ctx.beginPath();
-    ctx.roundRect(point.x - 76, point.y - 54, 152, 108, 7);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = color as string;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = '#f1eee5';
-    ctx.font = '700 12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('BASE', point.x, point.y + 4);
-  });
-
-  [
-    [BLUE_GOAL, '#2d8bc8', 'BLUE GOAL'],
-    [RED_GOAL, '#d84b50', 'RED GOAL'],
-  ].forEach(([goal, color, label]) => {
-    const point = goal as { x: number; y: number };
-    ctx.fillStyle = 'rgba(29,35,38,.82)';
-    ctx.strokeStyle = color as string;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 66, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = color as string;
-    ctx.font = '700 12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(label as string, point.x, point.y + 4);
-  });
-
-  ctx.save();
-  ctx.translate(500, 326);
-  ctx.shadowColor = 'rgba(0,0,0,.35)';
-  ctx.shadowBlur = 9;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = '#65747b';
-  ctx.strokeStyle = '#aeb8bb';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  for (let i = 0; i < 6; i += 1) {
-    const angle = (Math.PI / 3) * i - Math.PI / 6;
-    const x = Math.cos(angle) * 73;
-    const y = Math.sin(angle) * 73;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#e4e7e4';
-  ctx.font = '700 11px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('OBELISK', 0, 4);
-  ctx.restore();
-
-  const activePieces = world.pieces
-    .filter((piece) => piece.active)
-    .sort((a, b) => distance(world.player, a) - distance(world.player, b));
-  const nearestPiece = activePieces[0];
-
-  if (selected.assist === 'pathfinder' && nearestPiece) {
-    ctx.strokeStyle = 'rgba(238,184,48,.78)';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([8, 10]);
-    ctx.beginPath();
-    ctx.moveTo(world.player.x, world.player.y);
-    ctx.lineTo(nearestPiece.x, nearestPiece.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  if (selected.assist === 'coloreye') {
-    const expectedColor = PATTERN[world.playerSequence % PATTERN.length];
-    const patternPiece = activePieces.find(
-      (piece) => piece.color === expectedColor,
-    );
-    if (patternPiece) {
-      ctx.save();
-      ctx.strokeStyle = '#f0bf36';
-      ctx.lineWidth = 4;
-      ctx.shadowColor = '#f0bf36';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(patternPiece.x, patternPiece.y, 23, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  if (selected.assist === 'range') {
-    const guideRadius =
-      selected.reach === 'cascade'
-        ? 150
-        : selected.reach === 'turret'
-          ? 138
-          : selected.reach === 'elevator'
-            ? 120
-            : 108;
-    ctx.strokeStyle = 'rgba(89,186,223,.82)';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([5, 8]);
-    ctx.beginPath();
-    ctx.arc(BLUE_GOAL.x, BLUE_GOAL.y, guideRadius, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  if (selected.assist === 'align') {
-    const target = world.player.carried.length > 0 ? BLUE_GOAL : nearestPiece;
-    if (target) {
-      const angle = Math.atan2(
-        target.y - world.player.y,
-        target.x - world.player.x,
-      );
-      ctx.strokeStyle = 'rgba(240,191,54,.9)';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(world.player.x, world.player.y);
-      ctx.lineTo(
-        world.player.x + Math.cos(angle) * 54,
-        world.player.y + Math.sin(angle) * 54,
-      );
-      ctx.stroke();
-    }
-  }
-
-  world.pieces.forEach((piece) => {
-    if (!piece.active) return;
-    ctx.shadowColor = 'rgba(0,0,0,.38)';
-    ctx.shadowBlur = 5;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = piece.color === 'P' ? '#8153a8' : '#8baa3c';
-    ctx.beginPath();
-    for (let side = 0; side < 8; side += 1) {
-      const angle = (side / 8) * Math.PI * 2 - Math.PI / 8;
-      const px = piece.x + Math.cos(angle) * 15;
-      const py = piece.y + Math.sin(angle) * 15;
-      if (side === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-    ctx.strokeStyle = piece.color === 'P' ? '#b89acd' : '#bfd477';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = '#f6f2e8';
-    ctx.font = '800 10px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(piece.color, piece.x, piece.y + 3.5);
-  });
-
-  world.particles.forEach((particle) => {
-    const alpha = clamp(particle.life / particle.maxLife, 0, 1);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = particle.color;
-    if (particle.text) {
-      ctx.font = '800 16px ui-monospace, monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(particle.text, particle.x, particle.y);
-    } else {
-      ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-  ctx.globalAlpha = 1;
-
-  drawRobot(ctx, world.player, 'blue', selected);
-  drawRobot(ctx, world.bot, 'red');
-  ctx.restore();
 }
 
 export function GameArena({
   selected,
+  mountSlots,
   difficulty,
   onFinish,
   onWorkshop,
@@ -550,6 +257,10 @@ export function GameArena({
   const finishRef = useRef(onFinish);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
+  const sceneRef = useRef<ReturnType<typeof createArenaScene> | null>(null);
+  const [cameraMode, setCameraMode] = useState<CameraMode>('follow');
+  const [sceneFailed, setSceneFailed] = useState(false);
+  const [countdown, setCountdown] = useState(3);
   const [hud, setHud] = useState<Hud>({
     time: MATCH_TIME,
     playerScore: 0,
@@ -568,6 +279,10 @@ export function GameArena({
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+
+  useEffect(() => {
+    sceneRef.current?.setCamera(cameraMode);
+  }, [cameraMode]);
 
   const capacity =
     selected.carry === 'stackpack' ? 5 : selected.carry === 'lowbin' ? 3 : 2;
@@ -636,6 +351,10 @@ export function GameArena({
         event.preventDefault();
       keysRef.current.add(event.key.toLowerCase());
       if (event.key === 'Escape' && !event.repeat) setPaused((value) => !value);
+      if (event.key.toLowerCase() === 'c' && !event.repeat)
+        setCameraMode((value) =>
+          value === 'arena' ? 'follow' : value === 'follow' ? 'orbit' : 'arena',
+        );
     };
     const up = (event: KeyboardEvent) =>
       keysRef.current.delete(event.key.toLowerCase());
@@ -663,25 +382,18 @@ export function GameArena({
     const canvas = canvasRef.current;
     const stage = stageRef.current;
     if (!canvas || !stage) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let width = 1;
-    let height = 1;
-    let dpr = 1;
-    const resize = () => {
-      const rect = stage.getBoundingClientRect();
-      width = Math.max(300, rect.width);
-      height = Math.max(300, rect.height);
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-    };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(stage);
+    let scene: ReturnType<typeof createArenaScene>;
+    try {
+      scene = createArenaScene(canvas, selected, worldRef.current, mountSlots);
+    } catch {
+      queueMicrotask(() => setSceneFailed(true));
+      return;
+    }
+    sceneRef.current = scene;
+    scene.setCamera('follow');
+    canvas.focus({ preventScroll: true });
+    let readyTime = 3;
+    let displayedCount = 3;
 
     let previous = performance.now();
     let accumulator = 0;
@@ -708,6 +420,7 @@ export function GameArena({
         ix /= inputLength;
         iy /= inputLength;
       }
+      ({ x: ix, y: iy } = scene.movement(ix, iy));
       const accel = selected.drive === 'anchor' ? 1050 : 820;
       const targetVx = ix * speed;
       const targetVy = iy * speed;
@@ -806,6 +519,8 @@ export function GameArena({
           world.botIntent = 'Returning to BASE';
         } else if (
           bot.carried.length >= botCapacity ||
+          (world.botIntent === 'Heading to the GOAL' &&
+            bot.carried.length > 0) ||
           !world.pieces.some((piece) => piece.active)
         ) {
           world.botTarget = RED_GOAL;
@@ -820,8 +535,17 @@ export function GameArena({
           }
         }
       }
-      const bdx = world.botTarget.x - bot.x;
-      const bdy = world.botTarget.y - bot.y;
+      let bdx = world.botTarget.x - bot.x;
+      let bdy = world.botTarget.y - bot.y;
+      const centerDistance = Math.hypot(bot.x - 500, bot.y - 326);
+      const approachDot = bdx * (bot.x - 500) + bdy * (bot.y - 326);
+      if (centerDistance < 165 && approachDot < 0) {
+        const side = bdx * (bot.y - 326) - bdy * (bot.x - 500) > 0 ? 1 : -1;
+        const nx = (bot.x - 500) / Math.max(centerDistance, 1);
+        const ny = (bot.y - 326) / Math.max(centerDistance, 1);
+        bdx = side * ny * 110 + nx * 28;
+        bdy = -side * nx * 110 + ny * 28;
+      }
       const bd = Math.hypot(bdx, bdy);
       const botSpeed =
         difficulty === 'rookie' ? 165 : difficulty === 'rival' ? 205 : 240;
@@ -925,7 +649,15 @@ export function GameArena({
     const loop = (now: number) => {
       const delta = Math.min((now - previous) / 1000, 0.1);
       previous = now;
-      if (!pausedRef.current && document.visibilityState === 'visible') {
+      const running =
+        !pausedRef.current && document.visibilityState === 'visible';
+      if (running && readyTime > 0) {
+        readyTime = Math.max(0, readyTime - delta);
+        if (Math.ceil(readyTime) !== displayedCount) {
+          displayedCount = Math.ceil(readyTime);
+          setCountdown(displayedCount);
+        }
+      } else if (running) {
         accumulator += delta;
         let steps = 0;
         while (accumulator >= 1 / 60 && steps < 5) {
@@ -944,7 +676,7 @@ export function GameArena({
           )[0];
         const nearGoal = distance(world.player, BLUE_GOAL) <= scoreRadius;
         let prompt =
-          world.player.carried.length >= capacity
+          world.player.carried.length > 0
             ? 'Drive to the blue GOAL'
             : 'Drive to an ARTIFACT';
         if (nearGoal && world.player.carried.length > 0)
@@ -968,13 +700,15 @@ export function GameArena({
         });
         hudClock = 0;
       }
-      drawField(ctx, world, selected, width, height, dpr);
+      if (document.visibilityState === 'visible')
+        scene.render(delta, world, !running || readyTime > 0);
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
-      observer.disconnect();
+      scene.dispose();
+      sceneRef.current = null;
     };
   }, [
     capacity,
@@ -984,6 +718,7 @@ export function GameArena({
     scoreDelay,
     scoreRadius,
     selected,
+    mountSlots,
     speed,
   ]);
 
@@ -997,10 +732,11 @@ export function GameArena({
     robot.vx = 0;
     robot.vy = 0;
     worldRef.current.time = Math.max(0, worldRef.current.time - 3);
+    canvasRef.current?.focus({ preventScroll: true });
   };
 
   return (
-    <main className="match-screen">
+    <main className="match-screen immersive-match">
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
         {hud.botScore}. Carrying {hud.carried} of {hud.capacity} artifacts.
@@ -1026,7 +762,10 @@ export function GameArena({
         <Button
           variant="outline"
           className="pause-button"
-          onClick={() => setPaused((value) => !value)}
+          onClick={() => {
+            setPaused((value) => !value);
+            canvasRef.current?.focus({ preventScroll: true });
+          }}
         >
           <Pause /> {paused ? 'Resume' : 'Pause'}
         </Button>
@@ -1038,7 +777,54 @@ export function GameArena({
           ref={stageRef}
           aria-label="Artifact Rush game field"
         >
-          <canvas ref={canvasRef} />
+          <canvas
+            ref={canvasRef}
+            tabIndex={0}
+            aria-label="3D competition field. Drive with WASD or arrows. Hold Space to collect and score. Press C to change camera, Escape to pause."
+            onPointerDown={() =>
+              canvasRef.current?.focus({ preventScroll: true })
+            }
+          />
+          <div className="arena-camera-switch" aria-label="Field camera">
+            {(['arena', 'follow', 'orbit'] as const).map((mode) => (
+              <button
+                key={mode}
+                aria-pressed={cameraMode === mode}
+                onClick={() => {
+                  setCameraMode(mode);
+                  canvasRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                {mode === 'arena'
+                  ? 'Arena'
+                  : mode === 'follow'
+                    ? 'Follow robot'
+                    : 'Free orbit'}
+              </button>
+            ))}
+            <kbd>C</kbd>
+          </div>
+          <div className="arena-event-label">
+            <b>FIELD / 01</b>
+            <span>Artifact Rush · FIRST-inspired challenge</span>
+          </div>
+          {countdown > 0 && !sceneFailed && (
+            <output className="match-countdown">
+              <span>Drivers, ready?</span>
+              <strong>{countdown}</strong>
+              <p>WASD to drive · Space to collect & score</p>
+            </output>
+          )}
+          {sceneFailed && (
+            <div className="pause-overlay">
+              <h2>The 3D field could not start</h2>
+              <p>
+                Enable hardware acceleration or try a browser with WebGL
+                support.
+              </p>
+              <Button onClick={onWorkshop}>Back to workshop</Button>
+            </div>
+          )}
           <div
             className="pattern-card"
             aria-label="Target pattern: purple, green, purple"
@@ -1059,7 +845,14 @@ export function GameArena({
               <Pause />
               <h2>Match paused</h2>
               <p>Take your time. The clock is stopped.</p>
-              <Button onClick={() => setPaused(false)}>Keep playing</Button>
+              <Button
+                onClick={() => {
+                  setPaused(false);
+                  canvasRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                Keep playing
+              </Button>
             </div>
           )}
         </section>

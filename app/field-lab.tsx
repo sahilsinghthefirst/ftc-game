@@ -878,6 +878,10 @@ export function FieldLab() {
     selectedRef.current = selected;
   }, [selected]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [phase]);
+
   const currentModules = modules.filter(
     (module) => module.category === category,
   );
@@ -1167,6 +1171,7 @@ export function FieldLab() {
     return (
       <GameArena
         selected={selected}
+        mountSlots={mountSlots}
         difficulty={difficulty}
         onWorkshop={() => setPhase('workshop')}
         onFinish={(matchResult) => {
@@ -1222,11 +1227,10 @@ export function FieldLab() {
       <section className="pit-titlebar">
         <div>
           <p className="team-label">FTC PIT WORKSHOP · ROBOT 01</p>
-          <h1>Build Atlas on a real mounting system.</h1>
+          <h1>Your robot. Your next move.</h1>
           <p>
-            Pick up a subsystem, find its pulsing bracket, and drop it onto the
-            robot. FieldLab handles the tiny hardware so you can focus on the
-            engineering choices.
+            Explore the robot, swap a mechanism, then put your build to the
+            test.
           </p>
         </div>
         <label className="starter-picker">
@@ -1270,6 +1274,7 @@ export function FieldLab() {
               snappingCategory={snappingCategory}
               mountSlots={mountSlots}
               mechanismRunning={mechanismRunning}
+              onSelectCategory={setCategory}
             />
             {dropHot && (
               <div className="stage-drop-label">
@@ -1482,13 +1487,12 @@ export function FieldLab() {
             })}
           </div>
 
-          <div className="pit-lesson">
-            <Lightbulb aria-hidden="true" />
-            <p>
-              <strong>Why teams build it this way</strong>
-              {buildInfo[category].lesson}
-            </p>
-          </div>
+          <details className="pit-lesson">
+            <summary>
+              <Lightbulb aria-hidden="true" /> Why teams build it this way
+            </summary>
+            <p>{buildInfo[category].lesson}</p>
+          </details>
 
           <div
             className="inspection-meters"
