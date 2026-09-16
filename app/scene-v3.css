@@ -685,6 +685,33 @@
   overflow: hidden;
   background: #122736e8;
 }
+.immersive-match .qualifier-timer-group {
+  position: relative;
+  justify-self: center;
+}
+.immersive-match .skip-qualifier-button {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #f2d18e;
+  border-radius: 4px;
+  background: #e5b850;
+  color: #1c3443;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.immersive-match .skip-qualifier-button:hover {
+  background: #f0ca77;
+}
+@media (max-width: 600px) {
+  .immersive-match:has(.skip-qualifier-button) .arena-camera-switch,
+  .immersive-match:has(.skip-qualifier-button) .pattern-card {
+    top: 118px;
+  }
+}
 .immersive-match .score-team {
   width: 100px;
   gap: 2px;

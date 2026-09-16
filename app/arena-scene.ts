@@ -7,6 +7,7 @@ import {
 } from './robot-model';
 import { label, place, ring, setupScene, solid } from './scene-kit';
 import type { World } from './game-arena';
+import { playerTarget } from './match-guidance';
 
 export type CameraMode = 'arena' | 'follow' | 'orbit';
 const SCALE = 0.02;
@@ -21,8 +22,8 @@ function artifact(color: string, radius = 0.28) {
     new THREE.SphereGeometry(radius, 20, 14),
     new THREE.MeshStandardMaterial({
       color: color === 'P' ? 0x9156d9 : 0xa4c845,
-      roughness: 0.33,
-      metalness: 0.12,
+      roughness: 0.78,
+      metalness: 0,
     }),
   );
   mesh.castShadow = true;
@@ -88,10 +89,32 @@ function goal(
 function arenaRoom(scene: THREE.Scene) {
   place(scene, solid(70, 0.3, 60, 0x1c2c36), 0, -0.45, 0);
   place(scene, solid(21, 0.22, 14, 0x0f1c24, 0.6), 0, -0.12, 0);
-  const tileGeometry = new THREE.BoxGeometry(0.99, 0.055, 0.99);
+  const foam = document.createElement('canvas');
+  foam.width = foam.height = 128;
+  const ctx = foam.getContext('2d')!;
+  ctx.fillStyle = '#888888';
+  ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2200; i++) {
+    const shade = 100 + ((i * 37) % 60);
+    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+    ctx.fillRect(
+      (i * 73) % 128,
+      (Math.floor(i / 128) * 31 + i * 17) % 128,
+      1,
+      1,
+    );
+  }
+  const foamTexture = new THREE.CanvasTexture(foam);
+  foamTexture.wrapS = foamTexture.wrapT = THREE.RepeatWrapping;
+  const tileGeometry = new THREE.BoxGeometry(0.996, 0.055, 0.996);
   const tiles = new THREE.InstancedMesh(
     tileGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94 }),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.98,
+      bumpMap: foamTexture,
+      bumpScale: 0.015,
+    }),
     260,
   );
   const matrix = new THREE.Matrix4();
@@ -102,7 +125,7 @@ function arenaRoom(scene: THREE.Scene) {
       tiles.setMatrixAt(index, matrix);
       tiles.setColorAt(
         index,
-        new THREE.Color((x + z) % 2 ? 0x53606a : 0x48555f),
+        new THREE.Color((x * 7 + z * 3) % 3 ? 0x62696b : 0x606769),
       );
       index++;
     }
@@ -249,6 +272,7 @@ type Flight = {
   elapsed: number;
   duration: number;
   scored: boolean;
+  collector?: number;
 };
 
 export function createArenaScene(
@@ -334,6 +358,7 @@ export function createArenaScene(
   >();
   const previousScores = [world.playerScore, world.botScore];
   const previousCarried = [[] as string[], [] as string[]];
+  const previousVelocity = [new THREE.Vector2(), new THREE.Vector2()];
   const targetLine = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(),
@@ -408,29 +433,69 @@ export function createArenaScene(
       model.root.rotation.y += error * Math.min(1, dt * 14);
       const speed = Math.hypot(actor.vx, actor.vy);
       if (!paused) {
-        model.moving.wheels.forEach((w, i) => {
-          w.rotation.x += speed * dt * 0.14 * (i % 2 ? 1 : -1);
+        const forward =
+          actor.vx * Math.cos(actor.angle) + actor.vy * Math.sin(actor.angle);
+        const turn = (error * Math.min(1, dt * 14)) / Math.max(dt, 0.001);
+        model.moving.wheels.forEach((w) => {
+          const travel = forward * SCALE + turn * w.position.x * 0.235;
+          w.rotateX(
+            ((travel * dt) / (0.55 * 0.235)) * (w.position.x < 0 ? -1 : 1),
+          );
         });
-        if (model.moving.intake)
-          model.moving.intake.rotation.x =
-            Math.sin(state.time * 24) * Math.min(1, speed / 120) * 0.06;
+        const acceleration = new THREE.Vector2(actor.vx, actor.vy).sub(
+          previousVelocity[index],
+        );
+        const lean = motion.matches
+          ? 0
+          : THREE.MathUtils.clamp(
+              (acceleration.dot(
+                new THREE.Vector2(Math.cos(actor.angle), Math.sin(actor.angle)),
+              ) /
+                Math.max(dt, 0.001)) *
+                0.000025,
+              -0.025,
+              0.025,
+            );
+        model.root.rotation.x = THREE.MathUtils.damp(
+          model.root.rotation.x,
+          lean,
+          9,
+          dt,
+        );
+        previousVelocity[index].set(actor.vx, actor.vy);
+        const collecting = flights.some(
+          (f) => !f.scored && f.collector === index,
+        );
+        model.moving.intake?.traverse((child) => {
+          if (child.userData.roller)
+            child.rotateY((collecting ? 24 : speed > 10 ? 5 : 0) * dt);
+        });
       }
       const signature = actor.carried.join('');
       if (signature !== cargoSignature[index]) {
         disposeObject(cargo[index]);
         cargo[index].clear();
         actor.carried.forEach((color, i) => {
-          const ball = artifact(color, 0.43);
+          const ball = artifact(color, 0.9);
+          ball.userData.arrival = i >= previousCarried[index].length ? 0.42 : 0;
           place(
             cargo[index],
             ball,
-            (i % 2) * 0.88 - 0.44,
-            1.65 + Math.floor(i / 2) * 0.7,
+            (i % 2) * 1.8 - 0.9,
+            2.05 + Math.floor(i / 2) * 1.25,
             0.65,
           );
         });
         cargoSignature[index] = signature;
       }
+      cargo[index].children.forEach((ball) => {
+        if (!paused)
+          ball.userData.arrival = Math.max(
+            0,
+            Number(ball.userData.arrival ?? 0) - dt,
+          );
+        ball.visible = ball.userData.arrival <= 0;
+      });
       const score = index === 0 ? state.playerScore : state.botScore;
       if (score > previousScores[index] && state.time > 0) {
         const colors = previousCarried[index].slice(
@@ -442,8 +507,10 @@ export function createArenaScene(
           scene.add(mesh);
           flights.push({
             mesh,
-            from: position(actor.x, actor.y, 1.1),
-            to: position(index === 0 ? 95 : 905, 108, 1.43),
+            from: model.groups.score.localToWorld(
+              new THREE.Vector3(0, 0.3, 0.35),
+            ),
+            to: position(index === 0 ? 95 : 905, 108, 1.8),
             elapsed: -i * 0.09,
             duration: 0.58,
             scored: true,
@@ -473,22 +540,28 @@ export function createArenaScene(
     });
     state.pieces.forEach((piece) => {
       const mesh = pieces.get(piece.id)!;
+      if (piece.active) {
+        mesh.position.copy(position(piece.x, piece.y, 0.34));
+        if (!paused) {
+          mesh.rotation.x += ((piece.vy ?? 0) * SCALE * dt) / 0.28;
+          mesh.rotation.z -= ((piece.vx ?? 0) * SCALE * dt) / 0.28;
+        }
+      }
       if (!piece.active && mesh.parent === scene) {
-        const collector =
-          Math.hypot(piece.x - state.player.x, piece.y - state.player.y) <
-          Math.hypot(piece.x - state.bot.x, piece.y - state.bot.y)
-            ? state.player
-            : state.bot;
+        const collectorIndex = piece.collector === 'bot' ? 1 : 0;
         scene.remove(mesh);
         const pickup = artifact(piece.color);
         scene.add(pickup);
         flights.push({
           mesh: pickup,
           from: position(piece.x, piece.y, 0.34),
-          to: position(collector.x, collector.y, 0.55),
+          to: models[collectorIndex].root.localToWorld(
+            new THREE.Vector3(0, 2, 0.65),
+          ),
           elapsed: 0,
-          duration: 0.24,
+          duration: 0.42,
           scored: false,
+          collector: collectorIndex,
         });
       }
     });
@@ -496,9 +569,18 @@ export function createArenaScene(
       const f = flights[i];
       if (!paused) f.elapsed += dt;
       const t = THREE.MathUtils.clamp(f.elapsed / f.duration, 0, 1);
-      f.mesh.position.lerpVectors(f.from, f.to, t);
-      f.mesh.position.y += Math.sin(t * Math.PI) * (f.scored ? 1.8 : 0.3);
-      f.mesh.rotation.z += dt * 6;
+      f.mesh.visible = f.elapsed >= 0;
+      if (f.collector !== undefined) {
+        const root = models[f.collector].root;
+        const mouth = root.localToWorld(new THREE.Vector3(0, 0.9, 3.1));
+        f.to.copy(root.localToWorld(new THREE.Vector3(0, 2.05, 0.65)));
+        if (t < 0.55) f.mesh.position.lerpVectors(f.from, mouth, t / 0.55);
+        else f.mesh.position.lerpVectors(mouth, f.to, (t - 0.55) / 0.45);
+      } else {
+        f.mesh.position.lerpVectors(f.from, f.to, t);
+        f.mesh.position.y += 4 * t * (1 - t) * 1.35;
+      }
+      if (!paused) f.mesh.rotation.z += dt * 6;
       if (t >= 1) {
         scene.remove(f.mesh);
         disposeObject(f.mesh);
@@ -507,26 +589,11 @@ export function createArenaScene(
     }
     playerRing.position.copy(position(state.player.x, state.player.y));
     botRing.position.copy(position(state.bot.x, state.bot.y));
-    const candidates = state.pieces
-      .filter((p) => p.active)
-      .sort(
-        (a, b) =>
-          Math.hypot(a.x - state.player.x, a.y - state.player.y) -
-          Math.hypot(b.x - state.player.x, b.y - state.player.y),
-      );
-    const expected = ['P', 'G', 'P'][state.playerSequence % 3];
-    const target =
-      state.time <= 10
-        ? { x: 118, y: 552 }
-        : state.player.carried.length
-          ? { x: 95, y: 108 }
-          : selected.assist === 'coloreye'
-            ? (candidates.find((p) => p.color === expected) ?? candidates[0])
-            : candidates[0];
+    const target = playerTarget(state, selected);
     if (target) {
       aimRing.visible = true;
       aimRing.position.copy(position(target.x, target.y, 0.095));
-      aimRing.scale.setScalar(state.player.carried.length ? 2.5 : 1);
+      aimRing.scale.setScalar(target.kind === 'piece' ? 1 : 2.5);
       const attr = targetLine.geometry.getAttribute(
         'position',
       ) as THREE.BufferAttribute;

@@ -262,6 +262,26 @@ function addElectronics(root: THREE.Group) {
   const battery = box(1.72, 0.48, 0.65, 0x363e42, { roughness: 0.8 });
   battery.position.set(0.45, 1.33, 0.68);
   deck.add(battery);
+  for (const x of [-0.12, 1.02]) {
+    const strap = box(0.16, 0.52, 0.7, 0x171c20, {
+      roughness: 1,
+      metalness: 0,
+    });
+    strap.position.set(x, 1.34, 0.68);
+    deck.add(strap);
+    deck.add(bolt(x, 1.62, 0.68));
+  }
+  for (let i = 0; i < 7; i++) {
+    const vent = box(0.07, 0.012, 0.35, 0x11181c, { roughness: 0.9 });
+    vent.position.set(-0.92 + i * 0.14, 1.551, -0.05);
+    deck.add(vent);
+  }
+  const led = box(0.09, 0.025, 0.09, 0x8bbd57, {
+    emissive: 0x548b24,
+    emissiveIntensity: 1,
+  });
+  led.position.set(0.1, 1.56, -0.7);
+  deck.add(led);
   const switchBody = box(0.42, 0.25, 0.28, 0x171d20);
   switchBody.position.set(1.3, 1.29, -0.68);
   deck.add(switchBody);
@@ -347,11 +367,20 @@ function addCollector(
       24,
     );
     rollerA.rotation.z = Math.PI / 2;
+    rollerA.userData.roller = true;
+    for (let i = 0; i < 8; i++) {
+      const fin = box(0.08, 3.45, 0.11, palette.rubber, { roughness: 1 });
+      const angle = (i * Math.PI) / 4;
+      fin.position.set(Math.cos(angle) * 0.2, 0, Math.sin(angle) * 0.2);
+      fin.rotation.y = -angle;
+      rollerA.add(fin);
+    }
     rollerA.position.set(0, 0.52, 3.05);
     rollers.add(rollerA);
     if (id === 'twinflex') {
       const rollerB = cylinder(0.17, 3.2, palette.orange, 24);
       rollerB.rotation.z = Math.PI / 2;
+      rollerB.userData.roller = true;
       rollerB.position.set(0, 0.86, 2.9);
       rollers.add(rollerB);
     }

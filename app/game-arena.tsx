@@ -13,6 +13,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import type { AssemblyCategory } from './assembly-bay';
+import { driveVelocity, moveBody, rollBalls } from './robot-physics';
+import {
+  carryCapacity,
+  playerTarget,
+  canSkipToEndgame,
+  skipToEndgame,
+} from './match-guidance';
 
 export type Difficulty = 'rookie' | 'rival' | 'ace';
 
@@ -40,6 +47,9 @@ type Piece = {
   y: number;
   color: PieceColor;
   active: boolean;
+  vx?: number;
+  vy?: number;
+  collector?: 'player' | 'bot';
 };
 type Robot = {
   x: number;
@@ -89,6 +99,7 @@ type Hud = {
   prompt: string;
   botIntent: string;
   finalSeconds: boolean;
+  canSkip: boolean;
 };
 
 const FIELD_W = 1000;
@@ -270,6 +281,7 @@ export function GameArena({
     prompt: 'Drive to an ARTIFACT',
     botIntent: 'Scanning the field',
     finalSeconds: false,
+    canSkip: false,
   });
 
   useEffect(() => {
@@ -284,8 +296,7 @@ export function GameArena({
     sceneRef.current?.setCamera(cameraMode);
   }, [cameraMode]);
 
-  const capacity =
-    selected.carry === 'stackpack' ? 5 : selected.carry === 'lowbin' ? 3 : 2;
+  const capacity = carryCapacity(selected.carry);
   const pickupRadius =
     selected.collect === 'widewave'
       ? 78
@@ -422,34 +433,16 @@ export function GameArena({
       }
       ({ x: ix, y: iy } = scene.movement(ix, iy));
       const accel = selected.drive === 'anchor' ? 1050 : 820;
-      const targetVx = ix * speed;
-      const targetVy = iy * speed;
-      world.player.vx += clamp(
-        targetVx - world.player.vx,
-        -accel * dt,
-        accel * dt,
+      driveVelocity(
+        world.player,
+        ix,
+        iy,
+        speed,
+        accel,
+        world.player.carried.length,
+        dt,
       );
-      world.player.vy += clamp(
-        targetVy - world.player.vy,
-        -accel * dt,
-        accel * dt,
-      );
-      if (inputLength === 0) {
-        world.player.vx *= Math.pow(0.04, dt);
-        world.player.vy *= Math.pow(0.04, dt);
-      }
-      world.player.x = clamp(
-        world.player.x + world.player.vx * dt,
-        43,
-        FIELD_W - 43,
-      );
-      world.player.y = clamp(
-        world.player.y + world.player.vy * dt,
-        43,
-        FIELD_H - 43,
-      );
-      if (Math.hypot(world.player.vx, world.player.vy) > 14)
-        world.player.angle = Math.atan2(world.player.vy, world.player.vx);
+      moveBody(world.player, dt);
       resolveObstacle(world.player);
 
       const action = keys.has(' ') || keys.has('space') || touch.action;
@@ -490,6 +483,7 @@ export function GameArena({
           world.player.carried.length < capacity
         ) {
           nearestPiece.active = false;
+          nearestPiece.collector = 'player';
           world.player.carried.push(nearestPiece.color);
           world.collected += 1;
           world.player.cooldown =
@@ -571,10 +565,7 @@ export function GameArena({
         bot.vx *= 0.7;
         bot.vy *= 0.7;
       }
-      bot.x = clamp(bot.x + bot.vx * dt, 43, FIELD_W - 43);
-      bot.y = clamp(bot.y + bot.vy * dt, 43, FIELD_H - 43);
-      if (Math.hypot(bot.vx, bot.vy) > 10)
-        bot.angle = Math.atan2(bot.vy, bot.vx);
+      moveBody(bot, dt);
       resolveObstacle(bot);
 
       if (bot.cooldown <= 0) {
@@ -598,6 +589,7 @@ export function GameArena({
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (piece && distance(bot, piece) < 43) {
             piece.active = false;
+            piece.collector = 'bot';
             bot.carried.push(piece.color);
             bot.cooldown = difficulty === 'rookie' ? 0.62 : 0.33;
             emitBurst(
@@ -619,7 +611,17 @@ export function GameArena({
         world.player.y += ny * push;
         world.bot.x -= nx * push;
         world.bot.y -= ny * push;
+        const impact = Math.min(
+          0,
+          (world.player.vx - bot.vx) * nx + (world.player.vy - bot.vy) * ny,
+        );
+        world.player.vx -= impact * nx * 0.55;
+        world.player.vy -= impact * ny * 0.55;
+        bot.vx += impact * nx * 0.55;
+        bot.vy += impact * ny * 0.55;
       }
+
+      rollBalls(world.pieces, [world.player, bot], dt);
 
       world.particles.forEach((particle) => {
         particle.life -= dt;
@@ -675,11 +677,16 @@ export function GameArena({
             (a, b) => distance(world.player, a) - distance(world.player, b),
           )[0];
         const nearGoal = distance(world.player, BLUE_GOAL) <= scoreRadius;
+        const target = playerTarget(world, selected);
         let prompt =
-          world.player.carried.length > 0
+          target?.kind === 'goal'
             ? 'Drive to the blue GOAL'
-            : 'Drive to an ARTIFACT';
-        if (nearGoal && world.player.carried.length > 0)
+            : target?.kind === 'piece' && selected.assist === 'coloreye'
+              ? `Collect a ${target.color === 'P' ? 'purple' : 'green'} ARTIFACT`
+              : target
+                ? 'Drive to an ARTIFACT'
+                : 'No ARTIFACTS left on the field';
+        if (nearGoal && target?.kind === 'goal')
           prompt = 'Hold ACTION to score';
         else if (
           nearest &&
@@ -697,6 +704,7 @@ export function GameArena({
           prompt,
           botIntent: world.botIntent,
           finalSeconds: world.time <= 10,
+          canSkip: canSkipToEndgame(world),
         });
         hudClock = 0;
       }
@@ -734,30 +742,54 @@ export function GameArena({
     worldRef.current.time = Math.max(0, worldRef.current.time - 3);
     canvasRef.current?.focus({ preventScroll: true });
   };
+  const skipQualifier = () => {
+    if (!skipToEndgame(worldRef.current)) return;
+    setHud((current) => ({
+      ...current,
+      time: 15,
+      canSkip: false,
+      finalSeconds: false,
+    }));
+    canvasRef.current?.focus({ preventScroll: true });
+  };
 
   return (
     <main className="match-screen immersive-match">
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
         {hud.botScore}. Carrying {hud.carried} of {hud.capacity} artifacts.
+        {hud.canSkip && ' All balls collected. You can skip to 15 seconds.'}
       </output>
       <header className="match-header">
         <Button variant="ghost" className="match-back" onClick={onWorkshop}>
           <ArrowLeft /> Workshop
         </Button>
-        <div className="scoreboard">
-          <div className="score-team blue">
-            <span>YOU</span>
-            <strong>{hud.playerScore}</strong>
+        <div className="qualifier-timer-group">
+          <div className="scoreboard">
+            <div className="score-team blue">
+              <span>YOU</span>
+              <strong>{hud.playerScore}</strong>
+            </div>
+            <div
+              className={`match-clock ${hud.finalSeconds ? 'is-final' : ''}`}
+            >
+              <span>QUALIFIER</span>
+              <strong>{Math.ceil(hud.time)}</strong>
+            </div>
+            <div className="score-team red">
+              <span>SCOUT-7</span>
+              <strong>{hud.botScore}</strong>
+            </div>
           </div>
-          <div className={`match-clock ${hud.finalSeconds ? 'is-final' : ''}`}>
-            <span>QUALIFIER</span>
-            <strong>{Math.ceil(hud.time)}</strong>
-          </div>
-          <div className="score-team red">
-            <span>SCOUT-7</span>
-            <strong>{hud.botScore}</strong>
-          </div>
+          {hud.canSkip && (
+            <Button
+              className="skip-qualifier-button"
+              onClick={skipQualifier}
+              title="All balls collected — jump to the final 15 seconds"
+            >
+              Skip to 15s
+            </Button>
+          )}
         </div>
         <Button
           variant="outline"
