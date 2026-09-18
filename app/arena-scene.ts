@@ -5,7 +5,18 @@ import {
   disposeObject,
   defaultMountSlots,
 } from './robot-model';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { label, place, ring, setupScene, solid } from './scene-kit';
+import {
+  BLUE_BASE,
+  BLUE_GOAL,
+  FIELD_CENTER,
+  FIELD_SIZE,
+  RED_BASE,
+  RED_GOAL,
+  TILE,
+  TILES,
+} from './field';
 import type { World } from './game-arena';
 import { playerTarget } from './match-guidance';
 
@@ -14,7 +25,7 @@ const SCALE = 0.02;
 const blue = 0x359be5,
   red = 0xe65856;
 const position = (x: number, z: number, y = 0.08) =>
-  new THREE.Vector3((x - 500) * SCALE, y, (z - 325) * SCALE);
+  new THREE.Vector3((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
 function artifact(color: string, radius = 0.28) {
   const group = new THREE.Group();
@@ -86,16 +97,16 @@ function goal(
   return root;
 }
 
-function arenaRoom(scene: THREE.Scene) {
-  place(scene, solid(70, 0.3, 60, 0x1c2c36), 0, -0.45, 0);
-  place(scene, solid(21, 0.22, 14, 0x0f1c24, 0.6), 0, -0.12, 0);
+// Soft EVA foam grain, used as a bump map so the mats catch the field lights
+// the way real FTC tiles do.
+function foamTexture() {
   const foam = document.createElement('canvas');
   foam.width = foam.height = 128;
   const ctx = foam.getContext('2d')!;
   ctx.fillStyle = '#888888';
   ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 2200; i++) {
-    const shade = 100 + ((i * 37) % 60);
+  for (let i = 0; i < 2600; i++) {
+    const shade = 96 + ((i * 37) % 68);
     ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
     ctx.fillRect(
       (i * 73) % 128,
@@ -104,38 +115,125 @@ function arenaRoom(scene: THREE.Scene) {
       1,
     );
   }
-  const foamTexture = new THREE.CanvasTexture(foam);
-  foamTexture.wrapS = foamTexture.wrapT = THREE.RepeatWrapping;
-  const tileGeometry = new THREE.BoxGeometry(0.996, 0.055, 0.996);
-  const tiles = new THREE.InstancedMesh(
-    tileGeometry,
-    new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.98,
-      bumpMap: foamTexture,
-      bumpScale: 0.015,
-    }),
-    260,
-  );
-  const matrix = new THREE.Matrix4();
-  let index = 0;
-  for (let x = 0; x < 20; x++)
-    for (let z = 0; z < 13; z++) {
-      matrix.makeTranslation(x - 9.5, 0.025, z - 6);
-      tiles.setMatrixAt(index, matrix);
-      tiles.setColorAt(
-        index,
-        new THREE.Color((x * 7 + z * 3) % 3 ? 0x62696b : 0x606769),
-      );
-      index++;
+  const texture = new THREE.CanvasTexture(foam);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(6, 6);
+  return texture;
+}
+
+// One interlocking foam mat: a square with two puzzle tabs per edge. `edges`
+// runs [back, right, front, left]; 1 pushes tabs outward, -1 cuts them inward,
+// and 0 leaves the edge straight for the outside of the field.
+function matShape(size: number, tab: number, edges: number[]) {
+  const half = size / 2;
+  const corners: [number, number][] = [
+    [-half, -half],
+    [half, -half],
+    [half, half],
+    [-half, half],
+  ];
+  const shape = new THREE.Shape();
+  shape.moveTo(corners[0][0], corners[0][1]);
+  for (let edge = 0; edge < 4; edge++) {
+    const [fromX, fromY] = corners[edge];
+    const [toX, toY] = corners[(edge + 1) % 4];
+    const direction = edges[edge];
+    if (!direction) {
+      shape.lineTo(toX, toY);
+      continue;
     }
-  tiles.receiveShadow = true;
-  scene.add(tiles);
-  for (const x of [-10.1, 10.1]) {
-    place(scene, solid(0.12, 0.1, 13.3, 0xb7c5cd, 0.8), x, 0.67, 0);
-    place(scene, solid(0.15, 0.2, 13.3, 0x293d49, 0.6), x, 0.13, 0);
+    // Unit vector along the edge. The corners wind counter-clockwise, so a
+    // counter-clockwise half circle bulges out of the tile and a clockwise one
+    // bites into it.
+    const ux = Math.sign(toX - fromX);
+    const uy = Math.sign(toY - fromY);
+    const start = Math.atan2(-uy, -ux);
+    for (const along of [0.28, 0.72]) {
+      const cx = fromX + (toX - fromX) * along;
+      const cy = fromY + (toY - fromY) * along;
+      shape.lineTo(cx - ux * tab, cy - uy * tab);
+      shape.absarc(cx, cy, tab, start, start + Math.PI, direction < 0);
+    }
+    shape.lineTo(toX, toY);
+  }
+  return shape;
+}
+
+function foamFloor(scene: THREE.Scene) {
+  const bump = foamTexture();
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x6a7174,
+    roughness: 0.99,
+    metalness: 0,
+    bumpMap: bump,
+    bumpScale: 0.02,
+  });
+  const size = TILE * SCALE;
+  // Mats are cut a hair smaller than their grid cell so the seam between them
+  // reads as a dark line, the way it does on a real field.
+  const seam = 0.07;
+  const tab = size * 0.105;
+  const geometries: THREE.BufferGeometry[] = [];
+  // A tab on one mat has to be a notch on its neighbour, so the seam direction
+  // is decided once per seam and read from both sides.
+  const vertical = (column: number, row: number) =>
+    (column + row) % 2 === 0 ? 1 : -1;
+  const horizontal = (column: number, row: number) =>
+    (column + row) % 2 === 0 ? -1 : 1;
+  for (let column = 0; column < TILES; column++)
+    for (let row = 0; row < TILES; row++) {
+      const edges = [
+        row === 0 ? 0 : -horizontal(column, row - 1),
+        column === TILES - 1 ? 0 : vertical(column, row),
+        row === TILES - 1 ? 0 : horizontal(column, row),
+        column === 0 ? 0 : -vertical(column - 1, row),
+      ];
+      const geometry = new THREE.ExtrudeGeometry(
+        matShape(size - seam, tab, edges),
+        {
+          depth: 0.07,
+          bevelEnabled: true,
+          bevelThickness: 0.012,
+          bevelSize: 0.012,
+          bevelSegments: 1,
+          curveSegments: 6,
+        },
+      );
+      geometry.rotateX(-Math.PI / 2);
+      geometry.translate(
+        (column + 0.5) * size - (TILES * size) / 2,
+        0.07,
+        (row + 0.5) * size - (TILES * size) / 2,
+      );
+      geometries.push(geometry);
+    }
+  const floor = new THREE.Mesh(mergeGeometries(geometries, false), material);
+  geometries.forEach((geometry) => geometry.dispose());
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Backing under the mats so the seams read as shaded grooves rather than
+  // slots cut through to the floor below.
+  const backing = new THREE.Mesh(
+    new THREE.BoxGeometry(TILES * size, 0.06, TILES * size),
+    new THREE.MeshStandardMaterial({ color: 0x4c5356, roughness: 1 }),
+  );
+  backing.position.y = 0.03;
+  backing.receiveShadow = true;
+  scene.add(backing);
+}
+
+function arenaRoom(scene: THREE.Scene) {
+  const half = (FIELD_SIZE * SCALE) / 2;
+  const rail = half * 2 + 0.3;
+  place(scene, solid(70, 0.3, 60, 0x1c2c36), 0, -0.45, 0);
+  place(scene, solid(rail + 0.8, 0.22, rail + 0.8, 0x0f1c24, 0.6), 0, -0.12, 0);
+  foamFloor(scene);
+  for (const x of [-half - 0.1, half + 0.1]) {
+    place(scene, solid(0.12, 0.1, rail, 0xb7c5cd, 0.8), x, 0.67, 0);
+    place(scene, solid(0.15, 0.2, rail, 0x293d49, 0.6), x, 0.13, 0);
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.6, 13.2),
+      new THREE.BoxGeometry(0.04, 0.6, rail - 0.1),
       new THREE.MeshPhysicalMaterial({
         color: 0x9dbbca,
         transparent: true,
@@ -145,14 +243,14 @@ function arenaRoom(scene: THREE.Scene) {
       }),
     );
     place(scene, wall, x, 0.36, 0);
-    for (let z = -6.5; z <= 6.5; z += 1.3)
+    for (let z = -half; z <= half; z += TILE * SCALE)
       place(scene, solid(0.13, 0.72, 0.13, 0x7e949f, 0.8), x, 0.36, z);
   }
-  for (const z of [-6.6, 6.6]) {
-    place(scene, solid(20.3, 0.1, 0.12, 0xc3cfd4, 0.8), 0, 0.66, z);
-    place(scene, solid(20.3, 0.17, 0.16, 0x243844, 0.5), 0, 0.13, z);
+  for (const z of [-half - 0.1, half + 0.1]) {
+    place(scene, solid(rail, 0.1, 0.12, 0xc3cfd4, 0.8), 0, 0.66, z);
+    place(scene, solid(rail, 0.17, 0.16, 0x243844, 0.5), 0, 0.13, z);
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(20.2, 0.55, 0.04),
+      new THREE.BoxGeometry(rail - 0.1, 0.55, 0.04),
       new THREE.MeshStandardMaterial({
         color: 0xa2c5d8,
         transparent: true,
@@ -161,19 +259,20 @@ function arenaRoom(scene: THREE.Scene) {
       }),
     );
     place(scene, wall, 0, 0.37, z);
-    for (let x = -10; x <= 10; x += 2)
+    for (let x = -half; x <= half; x += TILE * SCALE)
       place(scene, solid(0.12, 0.7, 0.14, 0x7e949f, 0.8), x, 0.35, z);
   }
-  for (const [x, color] of [
-    [-7.64, blue],
-    [7.64, red],
-  ]) {
-    const tape = solid(3.05, 0.009, 2.16, color);
-    place(scene, tape, x, 0.06, 4.54);
-    place(scene, solid(2.85, 0.015, 1.96, 0x384e60), x, 0.066, 4.54);
-    const base = label('BASE', 1.2, 0.4, '#384e60', '#cfdee8');
-    base.rotation.x = -Math.PI / 2;
-    place(scene, base, x, 0.085, 4.8);
+  for (const [base, color] of [
+    [BLUE_BASE, blue],
+    [RED_BASE, red],
+  ] as const) {
+    const spot = position(base.x, base.y);
+    const tape = solid(2.5, 0.009, 2.1, color);
+    place(scene, tape, spot.x, 0.06, spot.z);
+    place(scene, solid(2.3, 0.015, 1.9, 0x384e60), spot.x, 0.066, spot.z);
+    const marker = label('BASE', 1.2, 0.4, '#384e60', '#cfdee8');
+    marker.rotation.x = -Math.PI / 2;
+    place(scene, marker, spot.x, 0.085, spot.z + 0.26);
   }
   const center = new THREE.Mesh(
     new THREE.CylinderGeometry(1.36, 1.45, 0.65, 6),
@@ -197,8 +296,10 @@ function arenaRoom(scene: THREE.Scene) {
   place(scene, obelisk, 0, 1.38, 0.02);
   const pLabel = label('P  G  P', 1.25, 0.35, '#253947', '#e9c767');
   place(scene, pLabel, 0, 1.12, 0.8);
-  goal(scene, -8.1, -4.34, blue, 'BLUE GOAL');
-  goal(scene, 8.1, -4.34, red, 'RED GOAL');
+  const blueSpot = position(BLUE_GOAL.x, BLUE_GOAL.y);
+  const redSpot = position(RED_GOAL.x, RED_GOAL.y);
+  goal(scene, blueSpot.x, blueSpot.z, blue, 'BLUE GOAL');
+  goal(scene, redSpot.x, redSpot.z, red, 'RED GOAL');
   for (let z = -5; z <= 5; z += 1)
     place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, 0.07, z);
   // Open competition hall with trusses, real benches, and readable wayfinding.
@@ -384,7 +485,10 @@ export function createArenaScene(
     camera.updateProjectionMatrix();
     if (mode === 'arena') resetArenaCamera();
   };
-  const arenaDistance = () => Math.max(22, 25 / camera.aspect);
+  // Framed off the mats so the whole square field fills the view.
+  const fieldSpan = FIELD_SIZE * SCALE;
+  const arenaDistance = () =>
+    Math.max(fieldSpan * 1.15, (fieldSpan * 1.3) / camera.aspect);
   const resetArenaCamera = () => {
     const distance = arenaDistance();
     camera.position.set(0, distance * 0.76, distance * 0.78);

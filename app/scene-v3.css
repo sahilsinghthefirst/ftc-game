@@ -1527,8 +1527,13 @@
     grid-column: 1;
     border: 0;
   }
+  /* Five traits will not fit across a phone without clipping the labels, so
+     they stack two at a time with the odd one spanning the row. */
   .trait-strip {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .trait-strip > div:last-child {
+    grid-column: 1 / -1;
   }
   .scene-instructions {
     max-width: calc(100% - 20px);

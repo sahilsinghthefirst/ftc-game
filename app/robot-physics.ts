@@ -1,5 +1,24 @@
+import {
+  BALL_MARGIN,
+  BLUE_GOAL,
+  CENTER_STRUCTURE,
+  FIELD_SIZE,
+  GOAL_RADIUS,
+  RED_GOAL,
+  ROBOT_MARGIN,
+} from './field.ts';
+
 type Body = { x: number; y: number; vx: number; vy: number; angle: number };
 type Ball = { x: number; y: number; vx?: number; vy?: number; active: boolean };
+
+// Handling is the workshop trait that decides how hard a drivetrain can change
+// the robot's velocity: `acceleration` while the driver is pushing a direction
+// and `braking` once they let go. Top speed is a separate trait on purpose, so
+// a quick robot can still be slow to get going or slow to stop.
+export function handlingProfile(handling: number) {
+  const rating = Math.max(1, Math.min(12, handling));
+  return { acceleration: 430 + rating * 75, braking: 300 + rating * 120 };
+}
 
 export function driveVelocity(
   body: Body,
@@ -7,6 +26,7 @@ export function driveVelocity(
   y: number,
   speed: number,
   acceleration: number,
+  braking: number,
   load: number,
   dt: number,
 ) {
@@ -14,7 +34,8 @@ export function driveVelocity(
   const dx = (x * speed) / mass - body.vx;
   const dy = (y * speed) / mass - body.vy;
   const change = Math.hypot(dx, dy);
-  const limit = (acceleration / mass) * dt * (x === 0 && y === 0 ? 1.25 : 1);
+  const coasting = x === 0 && y === 0;
+  const limit = ((coasting ? braking : acceleration) / mass) * dt;
   const factor = change > 0 ? Math.min(1, limit / change) : 0;
   body.vx += dx * factor;
   body.vy += dy * factor;
@@ -23,12 +44,13 @@ export function driveVelocity(
 export function moveBody(body: Body, dt: number) {
   body.x += body.vx * dt;
   body.y += body.vy * dt;
-  if (body.x < 43 || body.x > 957) {
-    body.x = Math.max(43, Math.min(957, body.x));
+  const far = FIELD_SIZE - ROBOT_MARGIN;
+  if (body.x < ROBOT_MARGIN || body.x > far) {
+    body.x = Math.max(ROBOT_MARGIN, Math.min(far, body.x));
     body.vx = 0;
   }
-  if (body.y < 43 || body.y > 607) {
-    body.y = Math.max(43, Math.min(607, body.y));
+  if (body.y < ROBOT_MARGIN || body.y > far) {
+    body.y = Math.max(ROBOT_MARGIN, Math.min(far, body.y));
     body.vy = 0;
   }
   if (Math.hypot(body.vx, body.vy) > 14) {
@@ -65,9 +87,13 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
       ball.vy += ny * impulse * 1.15;
     }
     for (const obstacle of [
-      { x: 500, y: 326, r: 76 },
-      { x: 95, y: 108, r: 45 },
-      { x: 905, y: 108, r: 45 },
+      {
+        x: CENTER_STRUCTURE.x,
+        y: CENTER_STRUCTURE.y,
+        r: CENTER_STRUCTURE.radius,
+      },
+      { x: BLUE_GOAL.x, y: BLUE_GOAL.y, r: GOAL_RADIUS },
+      { x: RED_GOAL.x, y: RED_GOAL.y, r: GOAL_RADIUS },
     ]) {
       const dx = ball.x - obstacle.x,
         dy = ball.y - obstacle.y;
@@ -82,12 +108,13 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
       ball.vx -= 1.35 * impact * nx;
       ball.vy -= 1.35 * impact * ny;
     }
-    if (ball.x < 16 || ball.x > 984) {
-      ball.x = Math.max(16, Math.min(984, ball.x));
+    const ballFar = FIELD_SIZE - BALL_MARGIN;
+    if (ball.x < BALL_MARGIN || ball.x > ballFar) {
+      ball.x = Math.max(BALL_MARGIN, Math.min(ballFar, ball.x));
       ball.vx *= -0.35;
     }
-    if (ball.y < 16 || ball.y > 634) {
-      ball.y = Math.max(16, Math.min(634, ball.y));
+    if (ball.y < BALL_MARGIN || ball.y > ballFar) {
+      ball.y = Math.max(BALL_MARGIN, Math.min(ballFar, ball.y));
       ball.vy *= -0.35;
     }
   }

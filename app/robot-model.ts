@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AssemblyCategory } from './assembly-bay';
 export type MovingParts = {
   wheels: THREE.Group[];
@@ -16,6 +17,9 @@ const palette = {
   edge: 0x334148,
   rubber: 0x1d2529,
   orange: 0xe96c2b,
+  pink: 0xe8539b,
+  slate: 0x46525a,
+  slateDark: 0x333e45,
   yellow: 0xe5ad26,
   blue: 0x387fa4,
   dark: 0x252f34,
@@ -135,51 +139,226 @@ function bracket(x: number, y: number, z: number, rotationY = 0) {
   return group;
 }
 
+const barrelCache = new Map<string, THREE.LatheGeometry>();
+
+function barrelGeometry(length: number, radius: number) {
+  const key = `${length}:${radius}`;
+  const cached = barrelCache.get(key);
+  if (cached) return cached;
+  const profile: [number, number][] = [
+    [0.3, -0.5],
+    [0.62, -0.45],
+    [0.85, -0.33],
+    [0.97, -0.16],
+    [1, 0],
+    [0.97, 0.16],
+    [0.85, 0.33],
+    [0.62, 0.45],
+    [0.3, 0.5],
+  ];
+  const geometry = new THREE.LatheGeometry(
+    profile.map(([r, y]) => new THREE.Vector2(r * radius, y * length)),
+    14,
+  );
+  barrelCache.set(key, geometry);
+  return geometry;
+}
+
+type RollerBank = {
+  count: number;
+  radius: number;
+  length: number;
+  thickness: number;
+  tilt: number;
+  color: number;
+  offset?: number;
+  phase?: number;
+  yoke?: boolean;
+};
+
+function addRollerBank(group: THREE.Group, bank: RollerBank) {
+  const { count, radius, length, thickness, tilt, color } = bank;
+  const offset = bank.offset ?? 0;
+  const axis = new THREE.Vector3(Math.sin(tilt), 0, Math.cos(tilt));
+  const orientation = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    axis,
+  );
+  for (let i = 0; i < count; i += 1) {
+    const pivot = new THREE.Group();
+    pivot.rotation.x = ((i + (bank.phase ?? 0)) / count) * Math.PI * 2;
+
+    const roller = new THREE.Mesh(
+      barrelGeometry(length, thickness),
+      material(color, { roughness: 0.52, metalness: 0.04 }),
+    );
+    roller.position.set(offset, radius, 0);
+    roller.quaternion.copy(orientation);
+    roller.castShadow = true;
+    roller.receiveShadow = true;
+    pivot.add(roller);
+
+    const pin = cylinder(thickness * 0.3, length + 0.1, palette.aluminum, 8);
+    pin.position.set(offset, radius, 0);
+    pin.quaternion.copy(orientation);
+    pivot.add(pin);
+
+    if (bank.yoke !== false) {
+      for (const end of [-1, 1]) {
+        const seat = axis.clone().multiplyScalar((end * (length + 0.08)) / 2);
+        const reach = Math.hypot(radius, seat.z);
+        const lean = Math.atan2(seat.z, radius);
+        const tine = box(0.05, 0.27, 0.1, palette.slate, {
+          roughness: 0.55,
+          metalness: 0.18,
+        });
+        tine.position.set(
+          offset + seat.x,
+          Math.cos(lean) * (reach - 0.12),
+          Math.sin(lean) * (reach - 0.12),
+        );
+        tine.rotation.x = lean;
+        pivot.add(tine);
+        const collar = cylinder(thickness * 0.44, 0.055, palette.aluminum, 12);
+        collar.position.set(offset + seat.x * 0.88, radius, seat.z * 0.88);
+        collar.quaternion.copy(orientation);
+        pivot.add(collar);
+      }
+    }
+    group.add(pivot);
+  }
+}
+
+function addWheelHub(group: THREE.Group, radius: number, width: number) {
+  const disc = cylinder(radius, width, palette.slate, 28);
+  disc.rotation.z = Math.PI / 2;
+  group.add(disc);
+
+  const rim = cylinder(radius * 0.78, width + 0.05, palette.slateDark, 26);
+  rim.rotation.z = Math.PI / 2;
+  group.add(rim);
+
+  for (const side of [-1, 1]) {
+    const face = cylinder(radius * 0.62, 0.05, palette.aluminum, 22);
+    face.rotation.z = Math.PI / 2;
+    face.position.x = side * (width / 2 + 0.02);
+    group.add(face);
+
+    const boss = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.3, radius * 0.3, 0.12, 6),
+      material(palette.slateDark, { roughness: 0.5, metalness: 0.3 }),
+    );
+    boss.rotation.z = Math.PI / 2;
+    boss.position.x = side * (width / 2 + 0.07);
+    boss.castShadow = true;
+    group.add(boss);
+
+    for (let i = 0; i < 4; i += 1) {
+      const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const screw = cylinder(0.042, 0.05, 0xd7dcde, 10);
+      screw.rotation.z = Math.PI / 2;
+      screw.position.set(
+        side * (width / 2 + 0.05),
+        Math.sin(angle) * radius * 0.42,
+        Math.cos(angle) * radius * 0.42,
+      );
+      group.add(screw);
+    }
+  }
+}
+
+function mergeWheelParts(source: THREE.Group) {
+  const buckets = new Map<
+    string,
+    { material: THREE.Material; geometries: THREE.BufferGeometry[] }
+  >();
+  source.updateMatrixWorld(true);
+  source.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const mat = (
+      Array.isArray(child.material) ? child.material[0] : child.material
+    ) as THREE.MeshStandardMaterial;
+    const key = `${mat.color.getHex()}:${mat.roughness}:${mat.metalness}`;
+    const geometry = child.geometry.index
+      ? child.geometry.toNonIndexed()
+      : child.geometry.clone();
+    geometry.deleteAttribute('uv');
+    geometry.applyMatrix4(child.matrixWorld);
+    const bucket = buckets.get(key) ?? { material: mat, geometries: [] };
+    bucket.geometries.push(geometry);
+    buckets.set(key, bucket);
+  });
+  const merged = new THREE.Group();
+  for (const bucket of buckets.values()) {
+    const geometry = mergeGeometries(bucket.geometries, false);
+    bucket.geometries.forEach((item) => item.dispose());
+    if (!geometry) continue;
+    const mesh = new THREE.Mesh(geometry, bucket.material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    merged.add(mesh);
+  }
+  return merged;
+}
+
 function makeWheel(kind: string) {
   const group = new THREE.Group();
   const wide = kind === 'anchor' || kind === 'trailblazer';
-  const tire = cylinder(
-    wide ? 0.57 : 0.53,
-    wide ? 0.38 : 0.32,
-    palette.rubber,
-    32,
-  );
-  tire.rotation.z = Math.PI / 2;
-  group.add(tire);
-  const hub = cylinder(0.2, wide ? 0.405 : 0.345, palette.aluminum, 20);
-  hub.rotation.z = Math.PI / 2;
-  group.add(hub);
-  const shaft = cylinder(0.07, wide ? 0.48 : 0.43, palette.aluminumDark, 12);
-  shaft.rotation.z = Math.PI / 2;
-  group.add(shaft);
 
   if (kind === 'comet') {
-    for (let i = 0; i < 8; i += 1) {
-      const angle = (i / 8) * Math.PI * 2;
-      const roller = cylinder(0.065, 0.36, palette.orange, 10);
-      roller.rotation.z = Math.PI / 2;
-      roller.rotation.y = Math.PI / 4;
-      roller.position.set(0.19, Math.sin(angle) * 0.43, Math.cos(angle) * 0.43);
-      group.add(roller);
-    }
+    addWheelHub(group, 0.29, 0.3);
+    addRollerBank(group, {
+      count: 12,
+      radius: 0.425,
+      length: 0.42,
+      thickness: 0.1,
+      tilt: Math.PI / 4,
+      color: palette.pink,
+    });
   } else if (kind === 'orbit') {
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.42, 0.085, 10, 28),
-      material(palette.blue, { roughness: 0.65 }),
-    );
-    ring.rotation.y = Math.PI / 2;
-    ring.position.x = 0.18;
-    group.add(ring);
+    addWheelHub(group, 0.27, 0.26);
+    for (const side of [-1, 1]) {
+      addRollerBank(group, {
+        count: 8,
+        radius: 0.44,
+        length: 0.27,
+        thickness: 0.09,
+        tilt: 0,
+        color: palette.blue,
+        offset: side * 0.085,
+        phase: side < 0 ? 0 : 0.5,
+      });
+    }
   } else {
-    for (let i = 0; i < 10; i += 1) {
-      const angle = (i / 10) * Math.PI * 2;
-      const tread = box(0.42, 0.08, 0.12, 0x4b585e, { roughness: 0.9 });
-      tread.position.set(0.2, Math.sin(angle) * 0.5, Math.cos(angle) * 0.5);
+    const tire = cylinder(
+      wide ? 0.57 : 0.53,
+      wide ? 0.38 : 0.32,
+      palette.rubber,
+      32,
+    );
+    tire.rotation.z = Math.PI / 2;
+    group.add(tire);
+    addWheelHub(group, wide ? 0.31 : 0.28, wide ? 0.42 : 0.36);
+    for (let i = 0; i < 14; i += 1) {
+      const angle = (i / 14) * Math.PI * 2;
+      const tread = box(wide ? 0.44 : 0.38, 0.09, 0.14, 0x39454b, {
+        roughness: 0.92,
+        metalness: 0.02,
+      });
+      tread.position.set(
+        0,
+        Math.sin(angle) * (wide ? 0.54 : 0.5),
+        Math.cos(angle) * (wide ? 0.54 : 0.5),
+      );
       tread.rotation.x = -angle;
       group.add(tread);
     }
   }
-  return group;
+
+  const shaft = cylinder(0.07, wide ? 0.62 : 0.56, palette.aluminumDark, 12);
+  shaft.rotation.z = Math.PI / 2;
+  group.add(shaft);
+  return mergeWheelParts(group);
 }
 
 function tube(points: THREE.Vector3[], color: number, radius = 0.035) {

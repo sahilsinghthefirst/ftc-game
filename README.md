@@ -23,7 +23,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. Color Eye should keep guiding collection until full or the field is empty. Once all field balls are collected, the skip button should set the remaining time to 15 seconds without extending an already shorter timer.
+Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. Color Eye should keep guiding collection until full or the field is empty. Once all field balls are collected, the skip button should set the remaining time to 10 seconds without extending an already shorter timer.
 
 ## Code map
 
@@ -31,6 +31,7 @@ Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, h
 - `app/assembly-bay.tsx`, `app/robot-3d.tsx`: interactive assembly and workshop view.
 - `app/robot-model.ts`: shared procedural robot geometry and moving parts.
 - `app/game-arena.tsx`: match loop, controls, bot, scoring, and HUD.
+- `app/field.ts`: field geometry - a 6 x 6 square of foam mats, with the goals, bases, and ARTIFACT positions every other module reads from.
 - `app/robot-physics.ts`: driving, braking, and rolling-ball interactions.
 - `app/match-guidance.ts`: collection guidance and skip-timer rules.
 - `app/arena-scene.ts`, `app/scene-kit.ts`: Three.js field, cameras, materials, and animations.
@@ -45,5 +46,15 @@ Branch from the latest `main`, make focused changes, run the checks, and open a 
 ## Hosting
 
 The existing hosted game is at https://fieldlab-ftc-outreach.gensahilsingh.chatgpt.site/. `.openai/hosting.json` identifies that Sites project and is used by the Vite configuration; it contains no deployment credentials. GitHub pushes alone do not update that hosted site. Production publication is a separate, authorized step.
+
+### Static export
+
+`npm run build` targets Cloudflare Workers: it emits client assets plus a worker that renders the HTML shell per request. For static hosts, `npm run build:static` boots that worker once, snapshots the shell it renders, and writes it alongside the client assets into `out/`. FieldLab is a single route with no server data, so the snapshot hydrates and plays exactly like the worker-served build.
+
+```sh
+npm run build:static
+```
+
+`out/` is a plain static directory any static host can serve. It includes a `vercel.json` with immutable caching for `/_next/static` and a catch-all rewrite to `index.html`. Deploy it with `cd out && npx vercel deploy --prod`; this needs an interactive `npx vercel login` first, and publishing is a separate, authorized step.
 
 The physics are intentionally forgiving for younger players. Multiplayer, full season-rule fidelity, and engineering-grade simulation are not implemented.

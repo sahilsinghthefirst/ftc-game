@@ -39,3 +39,6 @@ next-env.d.ts
 /work/
 /.playwright-cli/
 /output/
+
+# vercel
+/.vercel

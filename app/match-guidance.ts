@@ -1,3 +1,5 @@
+// Explicit extension so `node --test` can load this module directly.
+import { BLUE_BASE, BLUE_GOAL } from './field.ts';
 import type { World } from './game-arena';
 
 type GuidanceWorld = Pick<
@@ -14,7 +16,8 @@ export function playerTarget(
   world: GuidanceWorld,
   selected: Record<string, string>,
 ) {
-  if (world.time <= 10) return { kind: 'base' as const, x: 118, y: 552 };
+  if (world.time <= 10)
+    return { kind: 'base' as const, x: BLUE_BASE.x, y: BLUE_BASE.y };
 
   const candidates = world.pieces
     .filter((piece) => piece.active)
@@ -31,7 +34,7 @@ export function playerTarget(
       carried >= carryCapacity(selected.carry) ||
       candidates.length === 0)
   ) {
-    return { kind: 'goal' as const, x: 95, y: 108 };
+    return { kind: 'goal' as const, x: BLUE_GOAL.x, y: BLUE_GOAL.y };
   }
 
   const expected = ['P', 'G', 'P'][(world.playerSequence + carried) % 3];
@@ -45,13 +48,13 @@ export function playerTarget(
 export function canSkipToEndgame(world: TimerWorld) {
   return (
     !world.finished &&
-    world.time > 15 &&
+    world.time > 10 &&
     world.pieces.every((piece) => !piece.active)
   );
 }
 
 export function skipToEndgame(world: TimerWorld) {
   if (!canSkipToEndgame(world)) return false;
-  world.time = 15;
+  world.time = 10;
   return true;
 }

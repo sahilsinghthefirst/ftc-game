@@ -796,7 +796,7 @@
 
 .trait-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1px;
   background: #c7bfb2;
 }
@@ -1600,6 +1600,14 @@
   color: #59666b;
 }
 
+.briefing-handling {
+  color: #6b7678;
+}
+
+.briefing-handling strong {
+  color: #33454c;
+}
+
 .start-match-button {
   border-radius: 3px;
   background: #d94d2b;
@@ -2039,6 +2047,12 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
+  /* Five traits in two columns leaves an odd one out; let it span the row so
+     the strip background never shows through as an empty cell. */
+  .trait-strip > div:last-child {
+    grid-column: 1 / -1;
+  }
+
   .subsystem-selector {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2073,6 +2087,31 @@
 
   .part-tile,
   .part-drag-ghost {
+    transition: none;
+  }
+}
+
+.scene-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: #05090f;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+
+.scene-fade.is-out {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scene-fade.is-in {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-fade {
     transition: none;
   }
 }

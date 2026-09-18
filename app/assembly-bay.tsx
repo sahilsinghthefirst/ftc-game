@@ -101,32 +101,56 @@ function Wheel({
   const mecanum = kind === 'comet';
   const omni = kind === 'orbit';
   const traction = kind === 'anchor' || kind === 'trailblazer';
+  const clipId = `wheel-clip-${kind}-${x}-${y}`;
   return (
     <g
       className={`wheel ${mecanum ? 'mecanum' : omni ? 'omni' : 'traction'}`}
       transform={`translate(${x} ${y}) ${rear ? 'scale(.92)' : ''}`}
     >
+      <clipPath id={clipId}>
+        <ellipse
+          cx="0"
+          cy="0"
+          rx={traction ? 27 : 25}
+          ry={traction ? 39 : 36}
+        />
+      </clipPath>
       <ellipse
         cx="0"
         cy="0"
         rx={traction ? 29 : 27}
         ry={traction ? 41 : 38}
-        fill="#1f292f"
+        fill={mecanum ? '#3b464d' : '#1f292f'}
         stroke="#11181c"
         strokeWidth="4"
       />
-      <ellipse cx="0" cy="0" rx="12" ry="17" fill="#cfd6d8" />
-      <circle cx="0" cy="0" r="5" fill="#627078" />
-      {mecanum &&
-        [-22, -11, 0, 11, 22].map((offset) => (
-          <path
-            key={offset}
-            d={`M ${offset - 7} -27 l 14 18`}
-            stroke="#e86b2b"
-            strokeWidth="7"
-            strokeLinecap="round"
-          />
-        ))}
+      {mecanum && (
+        <g clipPath={`url(#${clipId})`}>
+          {[-45, -34, -23, -12, -1, 10, 21, 32, 43].map((offset) => (
+            <g key={offset}>
+              <path
+                d={`M-27 ${offset - 13} L27 ${offset + 13}`}
+                stroke="#222b30"
+                strokeWidth="13"
+                strokeLinecap="round"
+              />
+              <path
+                d={`M-27 ${offset - 13} L27 ${offset + 13}`}
+                stroke="#e8539b"
+                strokeWidth="9.5"
+                strokeLinecap="round"
+              />
+              <path
+                d={`M-19 ${offset - 10} L19 ${offset + 8}`}
+                stroke="#f48fc2"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                opacity="0.55"
+              />
+            </g>
+          ))}
+        </g>
+      )}
       {omni &&
         [-22, -9, 9, 22].map((offset) => (
           <rect
@@ -148,6 +172,19 @@ function Wheel({
             stroke="#536169"
             strokeWidth="4"
           />
+        ))}
+      <ellipse
+        cx="0"
+        cy="0"
+        rx="12"
+        ry="17"
+        fill={mecanum ? '#55626a' : '#cfd6d8'}
+      />
+      {mecanum && <ellipse cx="0" cy="0" rx="8" ry="12" fill="#cfd6d8" />}
+      <circle cx="0" cy="0" r="5" fill="#627078" />
+      {mecanum &&
+        [-1, 1].map((side) => (
+          <circle key={side} cx="0" cy={side * 8} r="1.9" fill="#8c989f" />
         ))}
     </g>
   );

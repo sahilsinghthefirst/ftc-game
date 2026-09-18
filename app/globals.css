@@ -828,6 +828,17 @@ button {
   font-family: var(--font-geist-mono);
   font-size: 9px;
 }
+.briefing-handling {
+  margin-top: 11px;
+  color: #7f97a6;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.briefing-handling strong {
+  color: #d7e6ef;
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+}
 .start-match-button {
   height: 52px;
   justify-content: space-between;

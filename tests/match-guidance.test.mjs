@@ -76,14 +76,14 @@ test('Skip only becomes available after every field ball is collected', () => {
   assert.equal(canSkipToEndgame(state), true);
 });
 
-test('Skip immediately sets fifteen seconds without changing scores or carried balls', () => {
+test('Skip immediately sets ten seconds without changing scores or carried balls', () => {
   const state = world();
   state.pieces.forEach((piece) => {
     piece.active = false;
   });
   const before = structuredClone(state);
   assert.equal(skipToEndgame(state), true);
-  assert.deepEqual(state, { ...before, time: 15 });
+  assert.deepEqual(state, { ...before, time: 10 });
   assert.equal(canSkipToEndgame(state), false);
   assert.equal(skipToEndgame(state), false);
 });
@@ -92,7 +92,7 @@ test('Skip cannot run early, extend time, or alter a finished match', () => {
   const active = world();
   assert.equal(skipToEndgame(active), false);
   assert.equal(active.time, 42);
-  for (const time of [15, 14.9, 0]) {
+  for (const time of [10, 9.9, 0]) {
     const state = { ...world(), time, pieces: [] };
     assert.equal(skipToEndgame(state), false);
     assert.equal(state.time, time);

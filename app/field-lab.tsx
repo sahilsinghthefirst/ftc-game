@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import {
   ArrowLeft,
@@ -44,8 +45,11 @@ import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
 import { Robot3DBay } from './robot-3d';
 
+const sceneFadeMs = 300;
+const sceneHoldMs = 90;
+
 type Category = AssemblyCategory;
-type Trait = 'speed' | 'control' | 'collect' | 'score';
+type Trait = 'speed' | 'handling' | 'control' | 'collect' | 'score';
 
 type Module = {
   id: string;
@@ -139,7 +143,7 @@ const modules: Module[] = [
     blurb: 'Glides sideways to line up fast.',
     strength: 'Moves in every direction',
     tradeoff: 'Uses more power',
-    traits: { speed: 4, control: 3, collect: 0, score: 0 },
+    traits: { speed: 4, handling: 1, control: 3, collect: 0, score: 0 },
     weight: 3,
     power: 4,
     space: 3,
@@ -152,7 +156,7 @@ const modules: Module[] = [
     blurb: 'Pushes hard and tracks straight.',
     strength: 'Stable under contact',
     tradeoff: 'Wide turning circle',
-    traits: { speed: 2, control: 4, collect: 0, score: 0 },
+    traits: { speed: 2, handling: 2, control: 4, collect: 0, score: 0 },
     weight: 4,
     power: 3,
     space: 4,
@@ -165,7 +169,7 @@ const modules: Module[] = [
     blurb: 'Light, quick, and easy to turn.',
     strength: 'Fast acceleration',
     tradeoff: 'Slides when stopping',
-    traits: { speed: 4, control: 2, collect: 0, score: 0 },
+    traits: { speed: 4, handling: -2, control: 2, collect: 0, score: 0 },
     weight: 2,
     power: 3,
     space: 2,
@@ -178,7 +182,7 @@ const modules: Module[] = [
     blurb: 'A compact base with serious grip.',
     strength: 'Precise control',
     tradeoff: 'Lower top speed',
-    traits: { speed: 1, control: 5, collect: 0, score: 0 },
+    traits: { speed: 1, handling: 3, control: 5, collect: 0, score: 0 },
     weight: 3,
     power: 2,
     space: 2,
@@ -191,7 +195,7 @@ const modules: Module[] = [
     blurb: 'Sweeps up ARTIFACTS across the front.',
     strength: 'Large pickup zone',
     tradeoff: 'Adds front weight',
-    traits: { speed: 0, control: 0, collect: 5, score: 0 },
+    traits: { speed: 0, handling: -1, control: 0, collect: 5, score: 0 },
     weight: 3,
     power: 3,
     space: 3,
@@ -204,7 +208,7 @@ const modules: Module[] = [
     blurb: 'Two soft rollers pull pieces in quickly.',
     strength: 'Fast collection',
     tradeoff: 'Can grab the wrong color',
-    traits: { speed: 0, control: 0, collect: 4, score: 0 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 4, score: 0 },
     weight: 2,
     power: 4,
     space: 3,
@@ -217,7 +221,7 @@ const modules: Module[] = [
     blurb: 'Grabs one exact piece at a time.',
     strength: 'Very accurate',
     tradeoff: 'Small pickup zone',
-    traits: { speed: 0, control: 1, collect: 2, score: 1 },
+    traits: { speed: 0, handling: 1, control: 1, collect: 2, score: 1 },
     weight: 2,
     power: 2,
     space: 2,
@@ -230,7 +234,7 @@ const modules: Module[] = [
     blurb: 'Funnels loose pieces into the robot.',
     strength: 'Works while turning',
     tradeoff: 'Slower intake',
-    traits: { speed: 0, control: 0, collect: 3, score: 0 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 3, score: 0 },
     weight: 2,
     power: 1,
     space: 4,
@@ -243,7 +247,7 @@ const modules: Module[] = [
     blurb: 'Keeps three pieces low and steady.',
     strength: 'Easy to control',
     tradeoff: 'Small capacity',
-    traits: { speed: 1, control: 2, collect: 0, score: 0 },
+    traits: { speed: 1, handling: 1, control: 2, collect: 0, score: 0 },
     weight: 2,
     power: 0,
     space: 3,
@@ -256,7 +260,7 @@ const modules: Module[] = [
     blurb: 'Stores up to five ARTIFACTS.',
     strength: 'High capacity',
     tradeoff: 'Tall and heavy',
-    traits: { speed: -1, control: -1, collect: 2, score: 1 },
+    traits: { speed: -1, handling: -1, control: -1, collect: 2, score: 1 },
     weight: 4,
     power: 1,
     space: 4,
@@ -269,7 +273,7 @@ const modules: Module[] = [
     blurb: 'Moves pieces straight to the scorer.',
     strength: 'Quick transfers',
     tradeoff: 'Constant power draw',
-    traits: { speed: 0, control: 0, collect: 1, score: 2 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 1, score: 2 },
     weight: 2,
     power: 3,
     space: 3,
@@ -282,7 +286,7 @@ const modules: Module[] = [
     blurb: 'Queues two pieces in the right order.',
     strength: 'Never jams',
     tradeoff: 'Only holds two',
-    traits: { speed: 0, control: 1, collect: 0, score: 2 },
+    traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 2 },
     weight: 1,
     power: 2,
     space: 2,
@@ -295,7 +299,7 @@ const modules: Module[] = [
     blurb: 'Extends high while staying compact.',
     strength: 'Longest reach',
     tradeoff: 'Heavy at full height',
-    traits: { speed: 0, control: -1, collect: 0, score: 4 },
+    traits: { speed: 0, handling: -1, control: -1, collect: 0, score: 4 },
     weight: 4,
     power: 4,
     space: 3,
@@ -308,7 +312,7 @@ const modules: Module[] = [
     blurb: 'Sweeps smoothly from collect to score.',
     strength: 'Simple and reliable',
     tradeoff: 'Needs clear space',
-    traits: { speed: 0, control: 1, collect: 1, score: 3 },
+    traits: { speed: 0, handling: -1, control: 1, collect: 1, score: 3 },
     weight: 3,
     power: 3,
     space: 4,
@@ -321,7 +325,7 @@ const modules: Module[] = [
     blurb: 'Raises the scorer straight upward.',
     strength: 'Easy to aim',
     tradeoff: 'Medium reach',
-    traits: { speed: 0, control: 2, collect: 0, score: 3 },
+    traits: { speed: 0, handling: 0, control: 2, collect: 0, score: 3 },
     weight: 3,
     power: 3,
     space: 3,
@@ -334,7 +338,7 @@ const modules: Module[] = [
     blurb: 'Turns the scorer without moving the base.',
     strength: 'Scores from any angle',
     tradeoff: 'Uses lots of space',
-    traits: { speed: 0, control: 1, collect: 0, score: 4 },
+    traits: { speed: 0, handling: -1, control: 1, collect: 0, score: 4 },
     weight: 3,
     power: 3,
     space: 5,
@@ -347,7 +351,7 @@ const modules: Module[] = [
     blurb: 'Sends pieces through the GOAL quickly.',
     strength: 'Rapid scoring',
     tradeoff: 'Needs careful aim',
-    traits: { speed: 0, control: 0, collect: 0, score: 5 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 5 },
     weight: 2,
     power: 4,
     space: 3,
@@ -360,7 +364,7 @@ const modules: Module[] = [
     blurb: 'Releases exactly one piece on command.',
     strength: 'Highly accurate',
     tradeoff: 'Slower cycle',
-    traits: { speed: 0, control: 2, collect: 0, score: 4 },
+    traits: { speed: 0, handling: 1, control: 2, collect: 0, score: 4 },
     weight: 2,
     power: 2,
     space: 2,
@@ -373,7 +377,7 @@ const modules: Module[] = [
     blurb: 'Dumps a whole load in one motion.',
     strength: 'Big scoring bursts',
     tradeoff: 'Long reload',
-    traits: { speed: 0, control: 0, collect: 1, score: 4 },
+    traits: { speed: 0, handling: 1, control: 0, collect: 1, score: 4 },
     weight: 2,
     power: 2,
     space: 4,
@@ -386,7 +390,7 @@ const modules: Module[] = [
     blurb: 'Launches from farther away.',
     strength: 'Scores at range',
     tradeoff: 'High power draw',
-    traits: { speed: 1, control: -1, collect: 0, score: 5 },
+    traits: { speed: 1, handling: -1, control: -1, collect: 0, score: 5 },
     weight: 3,
     power: 5,
     space: 3,
@@ -399,7 +403,7 @@ const modules: Module[] = [
     blurb: 'Recognizes purple and green instantly.',
     strength: 'Pattern hint',
     tradeoff: 'No driving help',
-    traits: { speed: 0, control: 0, collect: 1, score: 2 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 1, score: 2 },
     weight: 1,
     power: 1,
     space: 1,
@@ -412,7 +416,7 @@ const modules: Module[] = [
     blurb: 'Shows the perfect scoring distance.',
     strength: 'Distance guide',
     tradeoff: 'Works only near GOAL',
-    traits: { speed: 0, control: 1, collect: 0, score: 2 },
+    traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 2 },
     weight: 1,
     power: 1,
     space: 1,
@@ -425,7 +429,7 @@ const modules: Module[] = [
     blurb: 'Helps rotate toward the target.',
     strength: 'Aim assistance',
     tradeoff: 'Small speed penalty',
-    traits: { speed: -1, control: 3, collect: 0, score: 2 },
+    traits: { speed: -1, handling: 1, control: 3, collect: 0, score: 2 },
     weight: 1,
     power: 2,
     space: 1,
@@ -438,7 +442,7 @@ const modules: Module[] = [
     blurb: 'Highlights an efficient route.',
     strength: 'Route guidance',
     tradeoff: 'No scoring bonus',
-    traits: { speed: 1, control: 2, collect: 0, score: 0 },
+    traits: { speed: 1, handling: 2, control: 2, collect: 0, score: 0 },
     weight: 1,
     power: 2,
     space: 1,
@@ -507,11 +511,16 @@ const blueprints: {
   },
 ];
 
-const traitLabels: { id: Trait; label: string }[] = [
-  { id: 'speed', label: 'Speed' },
-  { id: 'control', label: 'Control' },
-  { id: 'collect', label: 'Collect' },
-  { id: 'score', label: 'Score' },
+const traitLabels: { id: Trait; label: string; hint: string }[] = [
+  { id: 'speed', label: 'Speed', hint: 'How fast the robot can go' },
+  {
+    id: 'handling',
+    label: 'Handling',
+    hint: 'How quickly it reaches that speed and how fast it stops',
+  },
+  { id: 'control', label: 'Control', hint: 'How steady it is while driving' },
+  { id: 'collect', label: 'Collect', hint: 'How easily it picks ARTIFACTS up' },
+  { id: 'score', label: 'Score', hint: 'How well it scores what it carries' },
 ];
 
 function HowItWorks() {
@@ -572,14 +581,24 @@ function HowItWorks() {
   );
 }
 
+// Plain-language read-out of what a Handling rating feels like to drive.
+function handlingNote(handling: number) {
+  if (handling <= 3) return 'slow off the line and slides past its target';
+  if (handling <= 6) return 'takes a moment to start and stop';
+  if (handling <= 9) return 'starts quickly and stops close to the mark';
+  return 'snaps to speed and stops on a dime';
+}
+
 function Briefing({
   selected,
+  handling,
   difficulty,
   onDifficulty,
   onStart,
   onBack,
 }: {
   selected: Record<Category, string>;
+  handling: number;
   difficulty: Difficulty;
   onDifficulty: (difficulty: Difficulty) => void;
   onStart: () => void;
@@ -689,6 +708,9 @@ function Briefing({
                 <span key={module.id}>{module.code}</span>
               ))}
             </div>
+            <p className="briefing-handling">
+              <strong>Handling {handling}/12</strong> · {handlingNote(handling)}
+            </p>
           </div>
           <Button className="start-match-button" onClick={onStart}>
             START MATCH <Play />
@@ -769,7 +791,7 @@ function Results({
               <RotateCcw /> Rematch
             </Button>
             <Button onClick={onWorkshop}>
-              Make one change <Wrench />
+              Make changes <Wrench />
             </Button>
           </div>
         </section>
@@ -862,6 +884,8 @@ export function FieldLab() {
   const [phase, setPhase] = useState<
     'workshop' | 'briefing' | 'match' | 'results'
   >('workshop');
+  const [sceneFade, setSceneFade] = useState<'idle' | 'out' | 'in'>('idle');
+  const fadeTimers = useRef<number[]>([]);
   const [difficulty, setDifficulty] = useState<Difficulty>('rival');
   const [result, setResult] = useState<MatchResult | null>(null);
   const selectedRef = useRef(selected);
@@ -881,6 +905,40 @@ export function FieldLab() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [phase]);
+
+  useEffect(
+    () => () => {
+      fadeTimers.current.forEach((id) => window.clearTimeout(id));
+    },
+    [],
+  );
+
+  const changeScene = (swap: () => void) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      swap();
+      return;
+    }
+    fadeTimers.current.forEach((id) => window.clearTimeout(id));
+    setSceneFade('out');
+    fadeTimers.current = [
+      window.setTimeout(swap, sceneFadeMs),
+      window.setTimeout(() => setSceneFade('in'), sceneFadeMs + sceneHoldMs),
+      window.setTimeout(
+        () => setSceneFade('idle'),
+        sceneFadeMs * 2 + sceneHoldMs,
+      ),
+    ];
+  };
+
+  const withSceneFade = (screen: ReactNode) => (
+    <>
+      {screen}
+      <div
+        className={`scene-fade ${sceneFade === 'idle' ? '' : `is-${sceneFade}`}`}
+        aria-hidden="true"
+      />
+    </>
+  );
 
   const currentModules = modules.filter(
     (module) => module.category === category,
@@ -1153,43 +1211,49 @@ export function FieldLab() {
   }, []);
 
   if (phase === 'briefing') {
-    return (
+    return withSceneFade(
       <Briefing
         selected={selected}
+        handling={traits.handling}
         difficulty={difficulty}
         onDifficulty={setDifficulty}
-        onStart={() => {
-          setResult(null);
-          setPhase('match');
-        }}
+        onStart={() =>
+          changeScene(() => {
+            setResult(null);
+            setPhase('match');
+          })
+        }
         onBack={() => setPhase('workshop')}
-      />
+      />,
     );
   }
 
   if (phase === 'match') {
-    return (
+    return withSceneFade(
       <GameArena
         selected={selected}
         mountSlots={mountSlots}
+        handling={traits.handling}
         difficulty={difficulty}
         onWorkshop={() => setPhase('workshop')}
-        onFinish={(matchResult) => {
-          setResult(matchResult);
-          setPhase('results');
-        }}
-      />
+        onFinish={(matchResult) =>
+          changeScene(() => {
+            setResult(matchResult);
+            setPhase('results');
+          })
+        }
+      />,
     );
   }
 
   if (phase === 'results' && result) {
-    return (
+    return withSceneFade(
       <Results
         result={result}
         selected={selected}
         onWorkshop={() => setPhase('workshop')}
         onRematch={() => setPhase('briefing')}
-      />
+      />,
     );
   }
 
@@ -1370,7 +1434,7 @@ export function FieldLab() {
 
           <div className="trait-strip" aria-label="Robot performance traits">
             {traitLabels.map((trait) => (
-              <div key={trait.id}>
+              <div key={trait.id} title={`${trait.label}: ${trait.hint}`}>
                 <span>{trait.label}</span>
                 <strong>
                   {traits[trait.id]}

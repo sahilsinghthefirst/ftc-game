@@ -13,7 +13,21 @@ import {
 import { Button } from '@/components/ui/button';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import type { AssemblyCategory } from './assembly-bay';
-import { driveVelocity, moveBody, rollBalls } from './robot-physics';
+import {
+  BLUE_BASE,
+  BLUE_GOAL,
+  CENTER_STRUCTURE,
+  GOAL_RADIUS,
+  RED_BASE,
+  RED_GOAL,
+  pieceLayout,
+} from './field';
+import {
+  driveVelocity,
+  handlingProfile,
+  moveBody,
+  rollBalls,
+} from './robot-physics';
 import {
   carryCapacity,
   playerTarget,
@@ -35,6 +49,7 @@ export type MatchResult = {
 type ArenaProps = {
   selected: Record<string, string>;
   mountSlots: Record<AssemblyCategory, number>;
+  handling: number;
   difficulty: Difficulty;
   onFinish: (result: MatchResult) => void;
   onWorkshop: () => void;
@@ -102,36 +117,8 @@ type Hud = {
   canSkip: boolean;
 };
 
-const FIELD_W = 1000;
-const FIELD_H = 650;
 const MATCH_TIME = 75;
-const BLUE_GOAL = { x: 95, y: 108 };
-const RED_GOAL = { x: 905, y: 108 };
-const BLUE_BASE = { x: 118, y: 552 };
-const RED_BASE = { x: 882, y: 552 };
 const PATTERN: PieceColor[] = ['P', 'G', 'P'];
-
-const pieceLayout: [number, number, PieceColor][] = [
-  [310, 128, 'P'],
-  [390, 105, 'G'],
-  [485, 128, 'P'],
-  [590, 108, 'G'],
-  [684, 132, 'P'],
-  [264, 255, 'G'],
-  [370, 242, 'P'],
-  [458, 276, 'G'],
-  [548, 245, 'P'],
-  [650, 263, 'G'],
-  [742, 238, 'P'],
-  [292, 402, 'P'],
-  [385, 438, 'G'],
-  [485, 405, 'P'],
-  [588, 439, 'G'],
-  [698, 397, 'P'],
-  [348, 544, 'G'],
-  [500, 530, 'P'],
-  [650, 548, 'G'],
-];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -141,8 +128,8 @@ const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
 function createWorld(): World {
   return {
     player: {
-      x: 155,
-      y: 520,
+      x: BLUE_BASE.x + 40,
+      y: BLUE_BASE.y - 30,
       vx: 0,
       vy: 0,
       angle: -Math.PI / 2,
@@ -150,8 +137,8 @@ function createWorld(): World {
       cooldown: 0,
     },
     bot: {
-      x: 845,
-      y: 520,
+      x: RED_BASE.x - 40,
+      y: RED_BASE.y - 30,
       vx: 0,
       vy: 0,
       angle: -Math.PI / 2,
@@ -159,13 +146,15 @@ function createWorld(): World {
       cooldown: 0,
     },
     pieces: pieceLayout.map(([x, y, color], id) => {
-      const dx = x - 500,
-        dy = y - 326,
+      // Nudge anything that starts inside the center structure back out.
+      const dx = x - CENTER_STRUCTURE.x,
+        dy = y - CENTER_STRUCTURE.y,
         radius = Math.hypot(dx, dy);
+      const clear = CENTER_STRUCTURE.radius + 29;
       return {
         id,
-        x: radius < 105 ? 500 + (dx / radius) * 110 : x,
-        y: radius < 105 ? 326 + (dy / radius) * 110 : y,
+        x: radius < clear ? CENTER_STRUCTURE.x + (dx / radius) * clear : x,
+        y: radius < clear ? CENTER_STRUCTURE.y + (dy / radius) * clear : y,
         color,
         active: true,
       };
@@ -180,7 +169,7 @@ function createWorld(): World {
     scored: 0,
     patternMatches: 0,
     botThink: 0,
-    botTarget: { x: 500, y: 325 },
+    botTarget: { x: CENTER_STRUCTURE.x, y: CENTER_STRUCTURE.y },
     botIntent: 'Scanning the field',
     finished: false,
   };
@@ -223,9 +212,9 @@ function emitBurst(
 
 function resolveObstacle(robot: Robot) {
   for (const obstacle of [
-    { x: 500, y: 326, radius: 76 },
-    { ...BLUE_GOAL, radius: 45 },
-    { ...RED_GOAL, radius: 45 },
+    { ...CENTER_STRUCTURE },
+    { ...BLUE_GOAL, radius: GOAL_RADIUS },
+    { ...RED_GOAL, radius: GOAL_RADIUS },
   ]) {
     const ox = obstacle.x;
     const oy = obstacle.y;
@@ -250,6 +239,7 @@ function resolveObstacle(robot: Robot) {
 export function GameArena({
   selected,
   mountSlots,
+  handling,
   difficulty,
   onFinish,
   onWorkshop,
@@ -322,6 +312,9 @@ export function GameArena({
           ? 220
           : 205;
   const speed = baseSpeed * (selected.assist === 'align' ? 0.94 : 1);
+  // The Handling trait shown in the workshop is the number that drives here, so
+  // a heavy build feels sluggish off the line and slides further when released.
+  const { acceleration, braking } = handlingProfile(handling);
   const alignTolerance = selected.assist === 'align' ? 12 : 0;
   const scoreDelay =
     selected.score === 'burst'
@@ -432,13 +425,13 @@ export function GameArena({
         iy /= inputLength;
       }
       ({ x: ix, y: iy } = scene.movement(ix, iy));
-      const accel = selected.drive === 'anchor' ? 1050 : 820;
       driveVelocity(
         world.player,
         ix,
         iy,
         speed,
-        accel,
+        acceleration,
+        braking,
         world.player.carried.length,
         dt,
       );
@@ -531,18 +524,33 @@ export function GameArena({
       }
       let bdx = world.botTarget.x - bot.x;
       let bdy = world.botTarget.y - bot.y;
-      const centerDistance = Math.hypot(bot.x - 500, bot.y - 326);
-      const approachDot = bdx * (bot.x - 500) + bdy * (bot.y - 326);
+      const centerDistance = Math.hypot(
+        bot.x - CENTER_STRUCTURE.x,
+        bot.y - CENTER_STRUCTURE.y,
+      );
+      const approachDot =
+        bdx * (bot.x - CENTER_STRUCTURE.x) + bdy * (bot.y - CENTER_STRUCTURE.y);
       if (centerDistance < 165 && approachDot < 0) {
-        const side = bdx * (bot.y - 326) - bdy * (bot.x - 500) > 0 ? 1 : -1;
-        const nx = (bot.x - 500) / Math.max(centerDistance, 1);
-        const ny = (bot.y - 326) / Math.max(centerDistance, 1);
+        const side =
+          bdx * (bot.y - CENTER_STRUCTURE.y) -
+            bdy * (bot.x - CENTER_STRUCTURE.x) >
+          0
+            ? 1
+            : -1;
+        const nx = (bot.x - CENTER_STRUCTURE.x) / Math.max(centerDistance, 1);
+        const ny = (bot.y - CENTER_STRUCTURE.y) / Math.max(centerDistance, 1);
         bdx = side * ny * 110 + nx * 28;
         bdy = -side * nx * 110 + ny * 28;
       }
       const bd = Math.hypot(bdx, bdy);
       const botSpeed =
         difficulty === 'rookie' ? 165 : difficulty === 'rival' ? 205 : 240;
+      // Scout-7 gets a handling rating of its own, so a tougher rival also
+      // corners and stops better instead of only driving faster.
+      const botAccel =
+        difficulty === 'rookie' ? 520 : difficulty === 'rival' ? 660 : 840;
+      const botCoast =
+        difficulty === 'rookie' ? 0.82 : difficulty === 'rival' ? 0.7 : 0.58;
       if (bd > 7) {
         const wobble =
           difficulty === 'rookie'
@@ -553,17 +561,17 @@ export function GameArena({
         const angle = Math.atan2(bdy, bdx) + wobble;
         bot.vx += clamp(
           Math.cos(angle) * botSpeed - bot.vx,
-          -660 * dt,
-          660 * dt,
+          -botAccel * dt,
+          botAccel * dt,
         );
         bot.vy += clamp(
           Math.sin(angle) * botSpeed - bot.vy,
-          -660 * dt,
-          660 * dt,
+          -botAccel * dt,
+          botAccel * dt,
         );
       } else {
-        bot.vx *= 0.7;
-        bot.vy *= 0.7;
+        bot.vx *= botCoast;
+        bot.vy *= botCoast;
       }
       moveBody(bot, dt);
       resolveObstacle(bot);
@@ -719,6 +727,8 @@ export function GameArena({
       sceneRef.current = null;
     };
   }, [
+    acceleration,
+    braking,
     capacity,
     difficulty,
     alignTolerance,
@@ -746,9 +756,9 @@ export function GameArena({
     if (!skipToEndgame(worldRef.current)) return;
     setHud((current) => ({
       ...current,
-      time: 15,
+      time: 10,
       canSkip: false,
-      finalSeconds: false,
+      finalSeconds: true,
     }));
     canvasRef.current?.focus({ preventScroll: true });
   };
@@ -758,7 +768,7 @@ export function GameArena({
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
         {hud.botScore}. Carrying {hud.carried} of {hud.capacity} artifacts.
-        {hud.canSkip && ' All balls collected. You can skip to 15 seconds.'}
+        {hud.canSkip && ' All balls collected. You can skip to 10 seconds.'}
       </output>
       <header className="match-header">
         <Button variant="ghost" className="match-back" onClick={onWorkshop}>
@@ -785,9 +795,9 @@ export function GameArena({
             <Button
               className="skip-qualifier-button"
               onClick={skipQualifier}
-              title="All balls collected — jump to the final 15 seconds"
+              title="All balls collected — jump to the final 10 seconds"
             >
-              Skip to 15s
+              Skip to 10s
             </Button>
           )}
         </div>
