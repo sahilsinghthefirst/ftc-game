@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  canSkipToEndgame,
+  BIG_ARTIFACT_STORAGE,
+  artifactSpace,
+  canCarry,
   carryCapacity,
+  collectProfile,
+  fieldTipValue,
+  tipValue,
+  usedSpace,
+  goalTips,
   playerTarget,
-  skipToEndgame,
+  GOAL_TIP_AT,
+  TIP_POINTS,
 } from '../app/match-guidance.ts';
+import { pieceLayout } from '../app/field.ts';
 
 const loadout = { carry: 'lowbin', assist: 'coloreye' };
 function world() {
@@ -17,38 +26,49 @@ function world() {
       { id: 1, x: 30, y: 0, color: 'G', active: true },
     ],
     time: 42,
-    playerSequence: 0,
     playerScore: 16,
     botScore: 8,
     finished: false,
   };
 }
 
-test('Color Eye keeps collecting after one ball and accounts for queued colors', () => {
+test('Color Eye keeps collecting until storage is full, taking the nearest piece', () => {
   const state = world();
   assert.equal(playerTarget(state, loadout).kind, 'piece');
-  assert.equal(playerTarget(state, loadout).color, 'G');
-  state.player.carried.push('G');
-  assert.equal(playerTarget(state, loadout).color, 'P');
-  state.playerSequence = 1;
-  state.player.carried = ['G'];
-  assert.equal(playerTarget(state, loadout).color, 'P');
+  // Nearest first now that there is no pattern to chase.
+  assert.equal(playerTarget(state, loadout).id, 0);
+  state.pieces[0].active = false;
+  assert.equal(playerTarget(state, loadout).id, 1);
 });
 
 test('Color Eye sends a full robot to goal for every storage capacity', () => {
   for (const carry of ['pocket', 'beltbridge', 'lowbin', 'stackpack']) {
     const state = world();
-    state.player.carried = Array(carryCapacity(carry) - 1).fill('P');
+    // Greens are one slot each, so capacity counts them one for one.
+    state.player.carried = Array(carryCapacity(carry) - 1).fill('G');
     assert.equal(playerTarget(state, { ...loadout, carry }).kind, 'piece');
-    state.player.carried.push('P');
+    state.player.carried.push('G');
     assert.equal(playerTarget(state, { ...loadout, carry }).kind, 'goal');
   }
 });
 
-test('Color Eye falls back to available colors, then scores when the field is empty', () => {
+test('One free slot sends the robot past a big purple to a green', () => {
+  const state = world();
+  // A 2-slot magazine holding one green cannot take the nearer purple.
+  state.player.carried = ['G'];
+  const target = playerTarget(state, { ...loadout, carry: 'pocket' });
+  assert.equal(target.color, 'G');
+  // The hopper takes purples whole, so it goes for the nearer purple instead.
+  assert.equal(
+    playerTarget(state, { ...loadout, carry: BIG_ARTIFACT_STORAGE }).color,
+    'P',
+  );
+});
+
+test('Color Eye scores once the field is empty', () => {
   const state = world();
   state.pieces[1].active = false;
-  assert.equal(playerTarget(state, loadout).color, 'P');
+  assert.equal(playerTarget(state, loadout).id, 0);
   state.pieces[0].active = false;
   assert.equal(playerTarget(state, loadout).kind, 'goal');
   state.player.carried = [];
@@ -67,37 +87,84 @@ test('Returning to base still takes priority in the final ten seconds', () => {
   assert.equal(playerTarget(state, loadout).kind, 'base');
 });
 
-test('Skip only becomes available after every field ball is collected', () => {
-  const state = world();
-  assert.equal(canSkipToEndgame(state), false);
-  state.pieces[0].active = false;
-  assert.equal(canSkipToEndgame(state), false);
-  state.pieces[1].active = false;
-  assert.equal(canSkipToEndgame(state), true);
+test('The goal tips at a flat ten, whatever is lying on the mats', () => {
+  assert.equal(GOAL_TIP_AT, 10);
+  // Reachable both ways: seven purples clear it, so do ten greens.
+  const purples = Array(7)
+    .fill('P')
+    .reduce((t, c) => t + tipValue(c), 0);
+  const greens = Array(10)
+    .fill('G')
+    .reduce((t, c) => t + tipValue(c), 0);
+  assert.ok(purples >= GOAL_TIP_AT);
+  assert.ok(greens >= GOAL_TIP_AT);
+  // And the field holds far more than one GOAL needs, so a tip is never the
+  // last thing that can happen in a match.
+  assert.ok(
+    fieldTipValue(pieceLayout.map(([, , c]) => ({ color: c }))) >
+      GOAL_TIP_AT * 2,
+  );
 });
 
-test('Skip immediately sets ten seconds without changing scores or carried balls', () => {
-  const state = world();
-  state.pieces.forEach((piece) => {
-    piece.active = false;
-  });
-  const before = structuredClone(state);
-  assert.equal(skipToEndgame(state), true);
-  assert.deepEqual(state, { ...before, time: 10 });
-  assert.equal(canSkipToEndgame(state), false);
-  assert.equal(skipToEndgame(state), false);
+test('Purple ARTIFACTS are worth more but eat more storage', () => {
+  assert.equal(tipValue('P'), 1.5);
+  assert.equal(tipValue('G'), 1);
+
+  // Two slots in ordinary storage, one in the Low Rider Hopper.
+  assert.equal(artifactSpace('P', 'stackpack'), 2);
+  assert.equal(artifactSpace('P', BIG_ARTIFACT_STORAGE), 1);
+  assert.equal(artifactSpace('G', 'stackpack'), 1);
+  assert.equal(artifactSpace('G', BIG_ARTIFACT_STORAGE), 1);
+
+  // A 2-slot magazine takes one purple or two greens.
+  assert.equal(canCarry([], 'P', 'pocket'), true);
+  assert.equal(canCarry(['P'], 'G', 'pocket'), false);
+  assert.equal(canCarry(['G'], 'G', 'pocket'), true);
+  assert.equal(canCarry(['G'], 'P', 'pocket'), false);
+
+  // The hopper's four slots take four purples - 6 toward a tip in one trip -
+  // while the seven-slot magazine only manages three purples and a green, 5.5.
+  assert.equal(carryCapacity(BIG_ARTIFACT_STORAGE), 4);
+  assert.equal(usedSpace(['P', 'P', 'P', 'P'], BIG_ARTIFACT_STORAGE), 4);
+  assert.equal(canCarry(['P', 'P', 'P'], 'P', BIG_ARTIFACT_STORAGE), true);
+  assert.equal(
+    canCarry(['P', 'P', 'P', 'P'], 'G', BIG_ARTIFACT_STORAGE),
+    false,
+  );
+
+  assert.equal(carryCapacity('stackpack'), 7);
+  assert.equal(usedSpace(['P', 'P', 'P', 'G'], 'stackpack'), 7);
+  assert.equal(canCarry(['P', 'P', 'P', 'G'], 'G', 'stackpack'), false);
+
+  const hopperTrip = ['P', 'P', 'P', 'P'].reduce((t, c) => t + tipValue(c), 0);
+  const magazineTrip = ['P', 'P', 'P', 'G'].reduce(
+    (t, c) => t + tipValue(c),
+    0,
+  );
+  assert.ok(hopperTrip > magazineTrip, 'the hopper should win on purples');
 });
 
-test('Skip cannot run early, extend time, or alter a finished match', () => {
-  const active = world();
-  assert.equal(skipToEndgame(active), false);
-  assert.equal(active.time, 42);
-  for (const time of [10, 9.9, 0]) {
-    const state = { ...world(), time, pieces: [] };
-    assert.equal(skipToEndgame(state), false);
-    assert.equal(state.time, time);
-  }
-  const finished = { ...world(), pieces: [], finished: true };
-  assert.equal(skipToEndgame(finished), false);
-  assert.equal(finished.time, 42);
+test('The two collectors trade reach against cycle time', () => {
+  const wide = collectProfile('widewave');
+  const twin = collectProfile('twinflex');
+  // WideWave sweeps a much bigger area but takes far longer per ARTIFACT, and
+  // bogs the robot down while it swallows one.
+  assert.ok(wide.radius > twin.radius * 1.5);
+  assert.ok(wide.cycle > twin.cycle * 4);
+  assert.ok(wide.drag < 0.5 && wide.dragFor > 0.5);
+  // TwinFlex barely slows down at all.
+  assert.ok(twin.drag > 0.85 && twin.dragFor < 0.2);
+  // Anything unknown falls back to the wide sweeper rather than crashing.
+  assert.deepEqual(collectProfile('nope'), wide);
+});
+
+test('A goal only tips once it reaches the threshold', () => {
+  for (let load = 0; load < GOAL_TIP_AT; load += 0.5)
+    assert.equal(goalTips(load), false, `load ${load}`);
+  assert.equal(goalTips(GOAL_TIP_AT), true);
+  assert.equal(goalTips(GOAL_TIP_AT + 3), true);
+});
+
+test('Tipping is the only way to score, and it is worth twenty', () => {
+  assert.equal(TIP_POINTS, 20);
 });

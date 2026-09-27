@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_TURN_RATE,
   driveVelocity,
   handlingProfile,
   moveBody,
   rollBalls,
+  rollDistance,
+  rollSpeed,
 } from '../app/robot-physics.ts';
+import { strafeFactor, turnRate } from '../app/match-guidance.ts';
 import {
   BALL_MARGIN,
   CENTER_STRUCTURE,
@@ -59,14 +63,50 @@ test('handling changes how fast a robot starts and stops, not its top speed', ()
 
   // Same throttle, same top speed: the crisp build just gets there sooner.
   for (let i = 0; i < 12; i++) {
-    driveVelocity(slow, 1, 0, speed, sluggish.acceleration, sluggish.braking, 0, step);
-    driveVelocity(quick, 1, 0, speed, crisp.acceleration, crisp.braking, 0, step);
+    driveVelocity(
+      slow,
+      1,
+      0,
+      speed,
+      sluggish.acceleration,
+      sluggish.braking,
+      0,
+      step,
+    );
+    driveVelocity(
+      quick,
+      1,
+      0,
+      speed,
+      crisp.acceleration,
+      crisp.braking,
+      0,
+      step,
+    );
   }
   assert.ok(quick.vx > slow.vx);
 
   for (let i = 0; i < 600; i++) {
-    driveVelocity(slow, 1, 0, speed, sluggish.acceleration, sluggish.braking, 0, step);
-    driveVelocity(quick, 1, 0, speed, crisp.acceleration, crisp.braking, 0, step);
+    driveVelocity(
+      slow,
+      1,
+      0,
+      speed,
+      sluggish.acceleration,
+      sluggish.braking,
+      0,
+      step,
+    );
+    driveVelocity(
+      quick,
+      1,
+      0,
+      speed,
+      crisp.acceleration,
+      crisp.braking,
+      0,
+      step,
+    );
   }
   assert.ok(Math.abs(slow.vx - speed) < 1e-9);
   assert.ok(Math.abs(quick.vx - speed) < 1e-9);
@@ -75,8 +115,26 @@ test('handling changes how fast a robot starts and stops, not its top speed', ()
   let slowDistance = 0,
     quickDistance = 0;
   for (let i = 0; i < 120; i++) {
-    driveVelocity(slow, 0, 0, speed, sluggish.acceleration, sluggish.braking, 0, step);
-    driveVelocity(quick, 0, 0, speed, crisp.acceleration, crisp.braking, 0, step);
+    driveVelocity(
+      slow,
+      0,
+      0,
+      speed,
+      sluggish.acceleration,
+      sluggish.braking,
+      0,
+      step,
+    );
+    driveVelocity(
+      quick,
+      0,
+      0,
+      speed,
+      crisp.acceleration,
+      crisp.braking,
+      0,
+      step,
+    );
     slowDistance += slow.vx * step;
     quickDistance += quick.vx * step;
   }
@@ -99,6 +157,37 @@ test('walls stop motion and heading changes are bounded', () => {
   assert.equal(corner.y, ROBOT_MARGIN);
 });
 
+test('the six-wheeler swings round far slower than the other bases', () => {
+  // Heading always chases the direction of travel; the drivetrain decides how
+  // fast. Start facing north, drive due east, and count the steps each chassis
+  // needs to bring its nose round.
+  const stepsToComeRound = (drive) => {
+    const robot = { x: 400, y: 400, vx: 200, vy: 0, angle: -Math.PI / 2 };
+    for (let i = 1; i <= 400; i++) {
+      moveBody(robot, step, turnRate(drive));
+      if (Math.abs(robot.angle) < 0.02) return i;
+    }
+    return Infinity;
+  };
+  const sixWheel = stepsToComeRound('trailblazer');
+  const omni = stepsToComeRound('orbit');
+  const mecanum = stepsToComeRound('comet');
+  const traction = stepsToComeRound('anchor');
+
+  // More steps means a slower turn.
+  assert.ok(omni < mecanum, 'omni should be the quickest to come round');
+  assert.ok(mecanum < traction);
+  assert.ok(traction < sixWheel);
+  // The gap is meant to be obvious, not subtle.
+  assert.ok(
+    sixWheel > omni * 4,
+    `omni came round in ${omni} steps, six-wheeler took ${sixWheel}`,
+  );
+  assert.equal(turnRate('trailblazer'), 2);
+  // Anything without a drivetrain of its own keeps the neutral rate.
+  assert.equal(DEFAULT_TURN_RATE, 7);
+});
+
 test('the field is a square of six by six mats', () => {
   assert.equal(TILES, 6);
   assert.equal(FIELD_SIZE, TILES * TILE);
@@ -107,8 +196,31 @@ test('the field is a square of six by six mats', () => {
     assert.ok(x > BALL_MARGIN && x < FIELD_SIZE - BALL_MARGIN, `x ${x}`);
     assert.ok(y > BALL_MARGIN && y < FIELD_SIZE - BALL_MARGIN, `y ${y}`);
     const gap = Math.hypot(x - CENTER_STRUCTURE.x, y - CENTER_STRUCTURE.y);
-    assert.ok(gap > CENTER_STRUCTURE.radius + 14, `piece at ${x},${y} overlaps center`);
+    assert.ok(
+      gap > CENTER_STRUCTURE.radius + 14,
+      `piece at ${x},${y} overlaps center`,
+    );
   }
+});
+
+test('a spilled ARTIFACT rolls out to about where it was aimed', () => {
+  // Clear lane across the mats: no goal, wall or center structure in the way.
+  for (const target of [80, 200, 380]) {
+    const ball = { x: 100, y: 200, vx: rollSpeed(target), vy: 0, active: true };
+    let frames = 0;
+    while (Math.hypot(ball.vx, ball.vy ?? 0) > 1 && frames < 600) {
+      rollBalls([ball], [], step);
+      frames += 1;
+    }
+    const travelled = ball.x - 100;
+    assert.ok(
+      Math.abs(travelled - target) < target * 0.12,
+      `aimed ${target}, rolled ${travelled.toFixed(1)}`,
+    );
+    // Long enough to read as a roll, short enough not to stall the match.
+    assert.ok(frames > 12 && frames < 200, `settled in ${frames} frames`);
+  }
+  assert.equal(Math.round(rollDistance(rollSpeed(250))), 250);
 });
 
 test('balls receive a bump, settle and stay finite at exact overlaps', () => {
@@ -138,4 +250,61 @@ test('ball collisions transfer momentum along the collision normal only', () => 
   const collected = { x: 999, y: 999, vx: 200, vy: 0, active: false };
   rollBalls([collected], [], 1 / 60);
   assert.equal(collected.x, 999);
+});
+
+test('a chassis that cannot strafe has to turn before it can go', () => {
+  const speed = 300;
+  const accel = 900;
+  // Both robots face east and are asked to drive due north. Time how long each
+  // takes to dodge 40 units that way - the quick sideways adjustment you make
+  // when lining up on a GOAL.
+  const stepsToTravel = (drive, distance) => {
+    const robot = { x: 400, y: 400, vx: 0, vy: 0, angle: 0 };
+    for (let i = 1; i <= 600; i++) {
+      driveVelocity(
+        robot,
+        0,
+        -1,
+        speed,
+        accel,
+        accel,
+        0,
+        step,
+        strafeFactor(drive),
+      );
+      moveBody(robot, step, turnRate(drive), -Math.PI / 2);
+      if (400 - robot.y >= distance) return i;
+    }
+    return Infinity;
+  };
+  const mecanum = stepsToTravel('comet', 40);
+  const sixWheel = stepsToTravel('trailblazer', 40);
+  // The mecanum simply drives sideways; the six-wheeler has to come round
+  // first, so it takes markedly longer to cover the same ground.
+  assert.ok(
+    sixWheel > mecanum * 1.35,
+    `mecanum took ${mecanum} steps, six-wheeler ${sixWheel}`,
+  );
+  // A tiny fraction of sideways push means it creeps rather than stalls.
+  assert.ok(Number.isFinite(sixWheel), 'it must still get there eventually');
+});
+
+test('steering follows the request, so a tank drive can still come round', () => {
+  // Facing east, asked to go west: with no sideways power at all the only way
+  // round is for the heading to lead.
+  const robot = { x: 400, y: 400, vx: 0, vy: 0, angle: 0 };
+  for (let i = 0; i < 120; i++) {
+    driveVelocity(robot, -1, 0, 300, 900, 900, 0, step, 0.12);
+    moveBody(robot, step, 2, Math.PI);
+  }
+  assert.ok(
+    Math.abs(
+      Math.atan2(
+        Math.sin(robot.angle - Math.PI),
+        Math.cos(robot.angle - Math.PI),
+      ),
+    ) < 0.05,
+    'the robot should have come round to face west',
+  );
+  assert.ok(robot.x < 399, 'and then actually driven west');
 });

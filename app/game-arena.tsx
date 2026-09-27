@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -12,11 +12,15 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createArenaScene, type CameraMode } from './arena-scene';
+import { botHeading, createBotMind } from './bot-driver';
 import type { AssemblyCategory } from './assembly-bay';
 import {
+  BALL_MARGIN,
   BLUE_BASE,
   BLUE_GOAL,
   CENTER_STRUCTURE,
+  FIELD_CENTER,
+  FIELD_SIZE,
   GOAL_RADIUS,
   RED_BASE,
   RED_GOAL,
@@ -27,12 +31,27 @@ import {
   handlingProfile,
   moveBody,
   rollBalls,
+  resolveObstacle,
+  rollSpeed,
+  BALL_RADIUS,
+  SPILL_DRAG,
 } from './robot-physics';
 import {
+  canCarry,
   carryCapacity,
+  collectProfile,
+  collectorTakes,
+  goalTips,
+  GOAL_TIP_AT,
+  TIP_POINTS,
+  tipValue,
+  reloadFactor,
+  scoreReachBonus,
+  shoveResist,
+  strafeFactor,
+  turnRate,
+  usedSpace,
   playerTarget,
-  canSkipToEndgame,
-  skipToEndgame,
 } from './match-guidance';
 
 export type Difficulty = 'rookie' | 'rival' | 'ace';
@@ -42,7 +61,7 @@ export type MatchResult = {
   botScore: number;
   collected: number;
   scored: number;
-  patternMatches: number;
+  tips: number;
   baseBonus: boolean;
 };
 
@@ -56,6 +75,9 @@ type ArenaProps = {
 };
 
 type PieceColor = 'P' | 'G';
+// An ARTIFACT is in exactly one place: loose on the mats (`active`), held by a
+// robot (inactive with a `collector`), or sitting in a GOAL (`stored`). Only
+// the stored ones spill when that GOAL tips.
 type Piece = {
   id: number;
   x: number;
@@ -65,14 +87,28 @@ type Piece = {
   vx?: number;
   vy?: number;
   collector?: 'player' | 'bot';
+  stored?: 'player' | 'bot';
+  radius: number;
+  px: number;
+  py: number;
+  spill?: boolean;
+  // Queued spill: an ARTIFACT waiting its turn to roll out of a GOAL.
+  release?: { delay: number; x: number; y: number; vx: number; vy: number };
 };
 type Robot = {
+  // Pose at the previous physics step, so the renderer can interpolate between
+  // steps instead of showing the fixed-timestep lumps.
+  px: number;
+  py: number;
+  pangle: number;
   x: number;
   y: number;
   vx: number;
   vy: number;
   angle: number;
   carried: PieceColor[];
+  // Seconds the intake is still hauling an ARTIFACT in, which drags top speed.
+  intake: number;
   cooldown: number;
 };
 type Particle = {
@@ -94,11 +130,13 @@ export type World = {
   time: number;
   playerScore: number;
   botScore: number;
-  playerSequence: number;
-  botSequence: number;
   collected: number;
   scored: number;
-  patternMatches: number;
+  // ARTIFACTs sitting in each GOAL, and how many times the blue GOAL has
+  // tipped. A GOAL empties itself onto the mats every time it tips.
+  playerGoal: number;
+  botGoal: number;
+  tips: number;
   botThink: number;
   botTarget: { x: number; y: number };
   botIntent: string;
@@ -114,11 +152,13 @@ type Hud = {
   prompt: string;
   botIntent: string;
   finalSeconds: boolean;
-  canSkip: boolean;
+  goalLoad: number;
 };
 
 const MATCH_TIME = 75;
-const PATTERN: PieceColor[] = ['P', 'G', 'P'];
+// Purple ARTIFACTS count 1.5 toward a tip and greens 1, up to this bar.
+const tipAt = GOAL_TIP_AT;
+export const PURPLE_BALL_RADIUS = 18;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -126,48 +166,59 @@ const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.hypot(a.x - b.x, a.y - b.y);
 
 function createWorld(): World {
+  const player = {
+    x: BLUE_BASE.x + 40,
+    y: BLUE_BASE.y - 30,
+    vx: 0,
+    vy: 0,
+    angle: -Math.PI / 2,
+    carried: [] as PieceColor[],
+    intake: 0,
+    cooldown: 0,
+  };
+  const bot = {
+    x: RED_BASE.x - 40,
+    y: RED_BASE.y - 30,
+    vx: 0,
+    vy: 0,
+    angle: -Math.PI / 2,
+    carried: [] as PieceColor[],
+    intake: 0,
+    cooldown: 0,
+  };
   return {
-    player: {
-      x: BLUE_BASE.x + 40,
-      y: BLUE_BASE.y - 30,
-      vx: 0,
-      vy: 0,
-      angle: -Math.PI / 2,
-      carried: [],
-      cooldown: 0,
-    },
-    bot: {
-      x: RED_BASE.x - 40,
-      y: RED_BASE.y - 30,
-      vx: 0,
-      vy: 0,
-      angle: -Math.PI / 2,
-      carried: [],
-      cooldown: 0,
-    },
+    player: { ...player, px: player.x, py: player.y, pangle: player.angle },
+    bot: { ...bot, px: bot.x, py: bot.y, pangle: bot.angle },
     pieces: pieceLayout.map(([x, y, color], id) => {
       // Nudge anything that starts inside the center structure back out.
       const dx = x - CENTER_STRUCTURE.x,
         dy = y - CENTER_STRUCTURE.y,
         radius = Math.hypot(dx, dy);
       const clear = CENTER_STRUCTURE.radius + 29;
+      const spotX =
+        radius < clear ? CENTER_STRUCTURE.x + (dx / radius) * clear : x;
+      const spotY =
+        radius < clear ? CENTER_STRUCTURE.y + (dy / radius) * clear : y;
       return {
         id,
-        x: radius < clear ? CENTER_STRUCTURE.x + (dx / radius) * clear : x,
-        y: radius < clear ? CENTER_STRUCTURE.y + (dy / radius) * clear : y,
+        x: spotX,
+        y: spotY,
+        px: spotX,
+        py: spotY,
         color,
         active: true,
+        radius: color === 'P' ? PURPLE_BALL_RADIUS : BALL_RADIUS,
       };
     }),
     particles: [],
     time: MATCH_TIME,
     playerScore: 0,
     botScore: 0,
-    playerSequence: 0,
-    botSequence: 0,
     collected: 0,
     scored: 0,
-    patternMatches: 0,
+    playerGoal: 0,
+    botGoal: 0,
+    tips: 0,
     botThink: 0,
     botTarget: { x: CENTER_STRUCTURE.x, y: CENTER_STRUCTURE.y },
     botIntent: 'Scanning the field',
@@ -210,29 +261,109 @@ function emitBurst(
     });
 }
 
-function resolveObstacle(robot: Robot) {
-  for (const obstacle of [
-    { ...CENTER_STRUCTURE },
-    { ...BLUE_GOAL, radius: GOAL_RADIUS },
-    { ...RED_GOAL, radius: GOAL_RADIUS },
-  ]) {
-    const ox = obstacle.x;
-    const oy = obstacle.y;
-    const radius = obstacle.radius;
-    const dx = robot.x - ox;
-    const dy = robot.y - oy;
-    const d = Math.hypot(dx, dy);
-    if (d < radius + 29) {
-      const nx = dx / Math.max(d, 1);
-      const ny = dy / Math.max(d, 1);
-      robot.x = ox + nx * (radius + 29);
-      robot.y = oy + ny * (radius + 29);
-      const dot = robot.vx * nx + robot.vy * ny;
-      if (dot < 0) {
-        robot.vx -= dot * nx;
-        robot.vy -= dot * ny;
-      }
-    }
+// Somewhere on the mats that is clear of the walls, the goals and the center
+// structure, and within an easy roll of `from` so the spill stays a spill
+// rather than a shot across the field. Falls back to the middle of the mats if
+// the draws keep landing on something.
+const SPILL_NEAR = 150;
+const SPILL_FAR = 330;
+
+function scatterSpot(from: { x: number; y: number }) {
+  const edge = BALL_MARGIN + 34;
+  const blocked = [
+    {
+      x: CENTER_STRUCTURE.x,
+      y: CENTER_STRUCTURE.y,
+      r: CENTER_STRUCTURE.radius + 40,
+    },
+    { x: BLUE_GOAL.x, y: BLUE_GOAL.y, r: GOAL_RADIUS + 60 },
+    { x: RED_GOAL.x, y: RED_GOAL.y, r: GOAL_RADIUS + 60 },
+  ];
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const reach = SPILL_NEAR + Math.random() * (SPILL_FAR - SPILL_NEAR);
+    const x = from.x + Math.cos(angle) * reach;
+    const y = from.y + Math.sin(angle) * reach;
+    if (x < edge || x > FIELD_SIZE - edge || y < edge || y > FIELD_SIZE - edge)
+      continue;
+    if (blocked.every((spot) => Math.hypot(x - spot.x, y - spot.y) > spot.r))
+      return { x, y };
+  }
+  return { x: FIELD_CENTER, y: FIELD_SIZE - edge };
+}
+
+// Move ARTIFACTS a robot was carrying into its GOAL. They stay off the mats,
+// but they now belong to the GOAL rather than to the robot.
+function storeInGoal(world: World, side: 'player' | 'bot', count: number) {
+  const held = world.pieces.filter(
+    (piece) => !piece.active && piece.collector === side && !piece.stored,
+  );
+  for (const piece of held.slice(0, count)) piece.stored = side;
+}
+
+// A GOAL tips over: it scores once, then dumps everything it held back onto
+// the field for both robots to chase again. Only what the GOAL holds spills -
+// ARTIFACTS still riding in a robot stay put.
+function tipGoal(world: World, side: 'player' | 'bot') {
+  const goal = side === 'player' ? BLUE_GOAL : RED_GOAL;
+  const spilled = world.pieces.filter((piece) => piece.stored === side);
+  spilled.forEach((piece, index) => {
+    const spot = scatterSpot(goal);
+    // ARTIFACTS leave the GOAL one at a time, each from its own point on the
+    // rim, and roll out on the gentle spill curve until they settle. Releasing
+    // them in sequence keeps them from piling into each other on the way out.
+    const rim = ((index + 0.5) / spilled.length) * Math.PI * 2;
+    const from = {
+      x: goal.x + Math.cos(rim) * (GOAL_RADIUS + 22),
+      y: goal.y + Math.sin(rim) * (GOAL_RADIUS + 22),
+    };
+    const dx = spot.x - from.x;
+    const dy = spot.y - from.y;
+    const travel = Math.max(Math.hypot(dx, dy), 1);
+    const launch = rollSpeed(travel, SPILL_DRAG);
+    piece.stored = undefined;
+    piece.release = {
+      delay: index * 0.11,
+      x: from.x,
+      y: from.y,
+      vx: (dx / travel) * launch,
+      vy: (dy / travel) * launch,
+    };
+  });
+  emitBurst(world, goal.x, goal.y, '#ffd166', `+${TIP_POINTS}`);
+  if (side === 'player') {
+    world.playerScore += TIP_POINTS;
+    world.playerGoal = 0;
+    world.tips += 1;
+  } else {
+    world.botScore += TIP_POINTS;
+    world.botGoal = 0;
+  }
+}
+
+// Let queued ARTIFACTS out of a tipped GOAL as their turn comes round.
+function releaseSpills(world: World, dt: number) {
+  for (const piece of world.pieces) {
+    const release = piece.release;
+    if (!release) continue;
+    release.delay -= dt;
+    if (release.delay > 0) continue;
+    piece.x = release.x;
+    piece.px = release.x;
+    piece.y = release.y;
+    piece.py = release.y;
+    piece.vx = release.vx;
+    piece.vy = release.vy;
+    piece.active = true;
+    piece.spill = true;
+    piece.collector = undefined;
+    piece.release = undefined;
+    emitBurst(
+      world,
+      piece.x,
+      piece.y,
+      piece.color === 'P' ? '#b977ff' : '#b9f54b',
+    );
   }
 }
 
@@ -255,6 +386,7 @@ export function GameArena({
     action: false,
   });
   const worldRef = useRef<World>(createWorld());
+  const botMindRef = useRef(createBotMind());
   const finishRef = useRef(onFinish);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
@@ -271,7 +403,7 @@ export function GameArena({
     prompt: 'Drive to an ARTIFACT',
     botIntent: 'Scanning the field',
     finalSeconds: false,
-    canSkip: false,
+    goalLoad: 0,
   });
 
   useEffect(() => {
@@ -287,43 +419,47 @@ export function GameArena({
   }, [cameraMode]);
 
   const capacity = carryCapacity(selected.carry);
-  const pickupRadius =
-    selected.collect === 'widewave'
-      ? 78
-      : selected.collect === 'twinflex'
-        ? 66
-        : selected.collect === 'sidesweep'
-          ? 59
-          : 45;
+  const {
+    radius: pickupRadius,
+    cycle: collectCycle,
+    drag: collectDrag,
+    dragFor: collectDragFor,
+    grab: collectGrab,
+  } = collectProfile(selected.collect);
+  const playerTurnRate = turnRate(selected.drive);
+  const playerStrafe = strafeFactor(selected.drive);
+  // How close the robot has to get to load the GOAL: what the lift reaches,
+  // plus whatever the scoring tool can throw.
   const scoreRadius =
-    selected.reach === 'cascade'
-      ? 150
+    (selected.reach === 'cascade'
+      ? 200
       : selected.reach === 'turret'
-        ? 138
+        ? 165
         : selected.reach === 'elevator'
           ? 120
-          : 108;
+          : 90) + scoreReachBonus(selected.score);
   const baseSpeed =
-    selected.drive === 'comet'
-      ? 275
-      : selected.drive === 'orbit'
-        ? 295
-        : selected.drive === 'trailblazer'
-          ? 220
-          : 205;
-  const speed = baseSpeed * (selected.assist === 'align' ? 0.94 : 1);
+    selected.drive === 'orbit'
+      ? 330
+      : selected.drive === 'trailblazer'
+        ? 315
+        : selected.drive === 'comet'
+          ? 290
+          : 165;
+  const speed = baseSpeed * (selected.assist === 'align' ? 0.88 : 1);
   // The Handling trait shown in the workshop is the number that drives here, so
   // a heavy build feels sluggish off the line and slides further when released.
   const { acceleration, braking } = handlingProfile(handling);
-  const alignTolerance = selected.assist === 'align' ? 12 : 0;
+  const alignTolerance = selected.assist === 'align' ? 20 : 0;
+  // Storage that feeds the scorer directly shortens the pause between loads.
   const scoreDelay =
-    selected.score === 'burst'
-      ? 0.22
-      : selected.score === 'tiptray'
-        ? 0.7
-        : selected.score === 'flywheel'
-          ? 0.3
-          : 0.43;
+    (selected.score === 'burst'
+      ? 0.15
+      : selected.score === 'flywheel'
+        ? 0.28
+        : selected.score === 'tiptray'
+          ? 1.1
+          : 0.5) * reloadFactor(selected.carry);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -407,8 +543,20 @@ export function GameArena({
     const update = (dt: number) => {
       const world = worldRef.current;
       if (world.finished) return;
+      // Remember where everything was before this step so the renderer can
+      // draw the in-between frames instead of snapping from step to step.
+      for (const robot of [world.player, world.bot]) {
+        robot.px = robot.x;
+        robot.py = robot.y;
+        robot.pangle = robot.angle;
+      }
+      for (const piece of world.pieces) {
+        piece.px = piece.x;
+        piece.py = piece.y;
+      }
       world.time = Math.max(0, world.time - dt);
       world.player.cooldown = Math.max(0, world.player.cooldown - dt);
+      world.player.intake = Math.max(0, world.player.intake - dt);
       world.bot.cooldown = Math.max(0, world.bot.cooldown - dt);
 
       const keys = keysRef.current;
@@ -429,23 +577,36 @@ export function GameArena({
         world.player,
         ix,
         iy,
-        speed,
+        world.player.intake > 0 ? speed * collectDrag : speed,
         acceleration,
         braking,
         world.player.carried.length,
         dt,
+        playerStrafe,
       );
-      moveBody(world.player, dt);
+      // Steer toward what the driver asked for, not toward the velocity the
+      // robot has managed so far - a chassis that cannot strafe would never
+      // come round otherwise.
+      moveBody(
+        world.player,
+        dt,
+        playerTurnRate,
+        inputLength > 0 ? Math.atan2(iy, ix) : undefined,
+      );
       resolveObstacle(world.player);
 
       const action = keys.has(' ') || keys.has('space') || touch.action;
       const nearGoal =
         distance(world.player, BLUE_GOAL) <= scoreRadius + alignTolerance;
-      const nearestPiece = world.pieces
-        .filter((piece) => piece.active)
-        .sort(
-          (a, b) => distance(world.player, a) - distance(world.player, b),
-        )[0];
+      // Only ARTIFACTS this collector will touch, nearest first.
+      const inReach = world.pieces
+        .filter(
+          (piece) =>
+            piece.active &&
+            collectorTakes(selected.collect, piece.color) &&
+            distance(world.player, piece) <= pickupRadius + alignTolerance,
+        )
+        .sort((a, b) => distance(world.player, a) - distance(world.player, b));
       if (action && world.player.cooldown <= 0) {
         if (nearGoal && world.player.carried.length > 0) {
           const scoredColors =
@@ -453,47 +614,48 @@ export function GameArena({
               ? world.player.carried.splice(0)
               : [world.player.carried.shift()!];
           scoredColors.forEach((color, index) => {
-            const expected = PATTERN[world.playerSequence % PATTERN.length];
-            const match = color === expected;
-            const points = match ? 8 : 5;
-            world.playerScore += points;
-            world.playerSequence += 1;
             world.scored += 1;
-            if (match) world.patternMatches += 1;
+            world.playerGoal += tipValue(color);
             emitBurst(
               world,
               BLUE_GOAL.x + 30,
               BLUE_GOAL.y + index * 22,
               color === 'P' ? '#b977ff' : '#b9f54b',
-              `+${points}`,
+              `${world.playerGoal}/${tipAt}`,
             );
           });
+          storeInGoal(world, 'player', scoredColors.length);
+          if (goalTips(world.playerGoal)) tipGoal(world, 'player');
           world.player.cooldown = scoreDelay;
-        } else if (
-          nearestPiece &&
-          distance(world.player, nearestPiece) <=
-            pickupRadius + alignTolerance &&
-          world.player.carried.length < capacity
-        ) {
-          nearestPiece.active = false;
-          nearestPiece.collector = 'player';
-          world.player.carried.push(nearestPiece.color);
-          world.collected += 1;
-          world.player.cooldown =
-            selected.collect === 'twinflex'
-              ? 0.16
-              : selected.collect === 'pinpoint'
-                ? 0.46
-                : 0.28;
-          emitBurst(
-            world,
-            nearestPiece.x,
-            nearestPiece.y,
-            nearestPiece.color === 'P' ? '#b977ff' : '#b9f54b',
-          );
+        } else if (inReach.length > 0) {
+          // A grabber can close on more than one at a time, so long as they
+          // are both in reach and there is storage for them.
+          const taken = [];
+          for (const piece of inReach) {
+            if (taken.length >= collectGrab) break;
+            if (!canCarry(world.player.carried, piece.color, selected.carry))
+              continue;
+            piece.active = false;
+            piece.collector = 'player';
+            world.player.carried.push(piece.color);
+            world.collected += 1;
+            taken.push(piece);
+            emitBurst(
+              world,
+              piece.x,
+              piece.y,
+              piece.color === 'P' ? '#b977ff' : '#b9f54b',
+            );
+          }
+          if (taken.length > 0) {
+            world.player.cooldown = collectCycle;
+            // The intake bogs the robot down while it swallows one. On the
+            // wide sweeper that is most of a second at a crawl; the twin
+            // rollers barely notice.
+            world.player.intake = collectDragFor;
+          }
         }
       }
-
       const bot = world.bot;
       world.botThink -= dt;
       const botCapacity = difficulty === 'rookie' ? 2 : 3;
@@ -505,7 +667,7 @@ export function GameArena({
           world.botTarget = RED_BASE;
           world.botIntent = 'Returning to BASE';
         } else if (
-          bot.carried.length >= botCapacity ||
+          usedSpace(bot.carried, 'bot') >= botCapacity ||
           (world.botIntent === 'Heading to the GOAL' &&
             bot.carried.length > 0) ||
           !world.pieces.some((piece) => piece.active)
@@ -522,27 +684,7 @@ export function GameArena({
           }
         }
       }
-      let bdx = world.botTarget.x - bot.x;
-      let bdy = world.botTarget.y - bot.y;
-      const centerDistance = Math.hypot(
-        bot.x - CENTER_STRUCTURE.x,
-        bot.y - CENTER_STRUCTURE.y,
-      );
-      const approachDot =
-        bdx * (bot.x - CENTER_STRUCTURE.x) + bdy * (bot.y - CENTER_STRUCTURE.y);
-      if (centerDistance < 165 && approachDot < 0) {
-        const side =
-          bdx * (bot.y - CENTER_STRUCTURE.y) -
-            bdy * (bot.x - CENTER_STRUCTURE.x) >
-          0
-            ? 1
-            : -1;
-        const nx = (bot.x - CENTER_STRUCTURE.x) / Math.max(centerDistance, 1);
-        const ny = (bot.y - CENTER_STRUCTURE.y) / Math.max(centerDistance, 1);
-        bdx = side * ny * 110 + nx * 28;
-        bdy = -side * nx * 110 + ny * 28;
-      }
-      const bd = Math.hypot(bdx, bdy);
+      const heading = botHeading(bot, world.botTarget, botMindRef.current, dt);
       const botSpeed =
         difficulty === 'rookie' ? 165 : difficulty === 'rival' ? 205 : 240;
       // Scout-7 gets a handling rating of its own, so a tougher rival also
@@ -551,14 +693,14 @@ export function GameArena({
         difficulty === 'rookie' ? 520 : difficulty === 'rival' ? 660 : 840;
       const botCoast =
         difficulty === 'rookie' ? 0.82 : difficulty === 'rival' ? 0.7 : 0.58;
-      if (bd > 7) {
+      if (heading.x !== 0 || heading.y !== 0) {
         const wobble =
           difficulty === 'rookie'
             ? Math.sin(world.time * 2.1) * 0.16
             : difficulty === 'rival'
               ? Math.sin(world.time * 2.7) * 0.06
               : 0;
-        const angle = Math.atan2(bdy, bdx) + wobble;
+        const angle = Math.atan2(heading.y, heading.x) + wobble;
         bot.vx += clamp(
           Math.cos(angle) * botSpeed - bot.vx,
           -botAccel * dt,
@@ -579,19 +721,18 @@ export function GameArena({
       if (bot.cooldown <= 0) {
         if (distance(bot, RED_GOAL) < 95 && bot.carried.length > 0) {
           const color = bot.carried.shift()!;
-          const expected = PATTERN[world.botSequence % PATTERN.length];
-          const points = color === expected ? 8 : 5;
-          world.botScore += points;
-          world.botSequence += 1;
+          world.botGoal += tipValue(color);
           bot.cooldown = difficulty === 'rookie' ? 0.72 : 0.45;
           emitBurst(
             world,
             RED_GOAL.x - 30,
             RED_GOAL.y,
             color === 'P' ? '#b977ff' : '#b9f54b',
-            `+${points}`,
+            `${world.botGoal}/${tipAt}`,
           );
-        } else if (bot.carried.length < botCapacity) {
+          storeInGoal(world, 'bot', 1);
+          if (goalTips(world.botGoal)) tipGoal(world, 'bot');
+        } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
             .filter((item) => item.active)
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
@@ -614,11 +755,16 @@ export function GameArena({
       if (between < 62) {
         const nx = (world.player.x - world.bot.x) / Math.max(between, 1);
         const ny = (world.player.y - world.bot.y) / Math.max(between, 1);
+        // Whoever grips harder gives up less ground. Scout-7 has no drivetrain
+        // of its own, so it pushes like a middling one.
         const push = (62 - between) * 0.5;
-        world.player.x += nx * push;
-        world.player.y += ny * push;
-        world.bot.x -= nx * push;
-        world.bot.y -= ny * push;
+        const resist = shoveResist(selected.drive);
+        const playerShare = (2 * push) / (resist + 1);
+        const botShare = 2 * push - playerShare;
+        world.player.x += nx * playerShare;
+        world.player.y += ny * playerShare;
+        world.bot.x -= nx * botShare;
+        world.bot.y -= ny * botShare;
         const impact = Math.min(
           0,
           (world.player.vx - bot.vx) * nx + (world.player.vy - bot.vy) * ny,
@@ -629,6 +775,7 @@ export function GameArena({
         bot.vy += impact * ny * 0.55;
       }
 
+      releaseSpills(world, dt);
       rollBalls(world.pieces, [world.player, bot], dt);
 
       world.particles.forEach((particle) => {
@@ -650,7 +797,7 @@ export function GameArena({
           botScore: world.botScore,
           collected: world.collected,
           scored: world.scored,
-          patternMatches: world.patternMatches,
+          tips: world.tips,
           baseBonus,
         });
       }
@@ -699,7 +846,7 @@ export function GameArena({
         else if (
           nearest &&
           distance(world.player, nearest) <= pickupRadius &&
-          world.player.carried.length < capacity
+          canCarry(world.player.carried, nearest.color, selected.carry)
         )
           prompt = 'Hold ACTION to collect';
         if (world.time <= 10) prompt = 'Return to the blue BASE!';
@@ -707,17 +854,24 @@ export function GameArena({
           time: world.time,
           playerScore: world.playerScore,
           botScore: world.botScore,
-          carried: world.player.carried.length,
+          carried: usedSpace(world.player.carried, selected.carry),
           capacity,
           prompt,
           botIntent: world.botIntent,
           finalSeconds: world.time <= 10,
-          canSkip: canSkipToEndgame(world),
+          goalLoad: world.playerGoal,
         });
         hudClock = 0;
       }
       if (document.visibilityState === 'visible')
-        scene.render(delta, world, !running || readyTime > 0);
+        // Whatever time is left over in the accumulator is how far past the
+        // last physics step this frame sits.
+        scene.render(
+          delta,
+          world,
+          !running || readyTime > 0,
+          Math.min(1, accumulator * 60),
+        );
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
@@ -730,6 +884,10 @@ export function GameArena({
     acceleration,
     braking,
     capacity,
+    collectCycle,
+    collectDrag,
+    collectDragFor,
+    collectGrab,
     difficulty,
     alignTolerance,
     pickupRadius,
@@ -738,6 +896,8 @@ export function GameArena({
     selected,
     mountSlots,
     speed,
+    playerTurnRate,
+    playerStrafe,
   ]);
 
   const setTouch = (key: keyof typeof touchRef.current, pressed: boolean) => {
@@ -745,21 +905,13 @@ export function GameArena({
   };
   const resetRobot = () => {
     const robot = worldRef.current.player;
-    robot.x = 155;
-    robot.y = 520;
+    robot.x = BLUE_BASE.x + 40;
+    robot.px = robot.x;
+    robot.y = BLUE_BASE.y - 30;
+    robot.py = robot.y;
     robot.vx = 0;
     robot.vy = 0;
     worldRef.current.time = Math.max(0, worldRef.current.time - 3);
-    canvasRef.current?.focus({ preventScroll: true });
-  };
-  const skipQualifier = () => {
-    if (!skipToEndgame(worldRef.current)) return;
-    setHud((current) => ({
-      ...current,
-      time: 10,
-      canSkip: false,
-      finalSeconds: true,
-    }));
     canvasRef.current?.focus({ preventScroll: true });
   };
 
@@ -767,8 +919,8 @@ export function GameArena({
     <main className="match-screen immersive-match">
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
-        {hud.botScore}. Carrying {hud.carried} of {hud.capacity} artifacts.
-        {hud.canSkip && ' All balls collected. You can skip to 10 seconds.'}
+        {hud.botScore}. Using {hud.carried} of {hud.capacity} storage slots.
+        {` Goal holds ${hud.goalLoad} of ${tipAt}; it tips at ${tipAt} for ${TIP_POINTS} points.`}
       </output>
       <header className="match-header">
         <Button variant="ghost" className="match-back" onClick={onWorkshop}>
@@ -791,15 +943,19 @@ export function GameArena({
               <strong>{hud.botScore}</strong>
             </div>
           </div>
-          {hud.canSkip && (
-            <Button
-              className="skip-qualifier-button"
-              onClick={skipQualifier}
-              title="All balls collected — jump to the final 10 seconds"
-            >
-              Skip to 10s
-            </Button>
-          )}
+          <div
+            className={`goal-meter ${hud.goalLoad >= tipAt - 1 ? 'is-close' : ''}`}
+            title={`The GOAL tips at ${tipAt} of loaded value for ${TIP_POINTS} points`}
+          >
+            <span>GOAL</span>
+            <strong>
+              {hud.goalLoad}
+              <small>/{tipAt}</small>
+            </strong>
+            <i>
+              <b style={{ width: `${(hud.goalLoad / tipAt) * 100}%` }} />
+            </i>
+          </div>
         </div>
         <Button
           variant="outline"
@@ -848,13 +1004,13 @@ export function GameArena({
           </div>
           <div className="arena-event-label">
             <b>FIELD / 01</b>
-            <span>Artifact Rush · FIRST-inspired challenge</span>
+            <span>Artifact Rush Â· FIRST-inspired challenge</span>
           </div>
           {countdown > 0 && !sceneFailed && (
             <output className="match-countdown">
               <span>Drivers, ready?</span>
               <strong>{countdown}</strong>
-              <p>WASD to drive · Space to collect & score</p>
+              <p>WASD to drive Â· Space to collect & score</p>
             </output>
           )}
           {sceneFailed && (
@@ -867,17 +1023,6 @@ export function GameArena({
               <Button onClick={onWorkshop}>Back to workshop</Button>
             </div>
           )}
-          <div
-            className="pattern-card"
-            aria-label="Target pattern: purple, green, purple"
-          >
-            <span> TARGET PATTERN</span>
-            <div>
-              <i className="purple">P</i>
-              <i className="green">G</i>
-              <i className="purple">P</i>
-            </div>
-          </div>
           <div className="bot-intent">
             <span>SCOUT-7</span>
             {hud.botIntent}
@@ -904,7 +1049,7 @@ export function GameArena({
             <p className="eyebrow">DRIVER STATION</p>
             <h1>{hud.prompt}</h1>
             <p className="carry-readout">
-              CARRYING <strong>{hud.carried}</strong> / {hud.capacity}
+              STORAGE <strong>{hud.carried}</strong> / {hud.capacity}
             </p>
           </div>
           <div className="desktop-controls">
@@ -1031,11 +1176,14 @@ export function GameArena({
             className="unstuck-button"
             onClick={resetRobot}
           >
-            <RotateCcw /> Reset robot <span>−3 sec</span>
+            <RotateCcw /> Reset robot <span>âˆ’3 sec</span>
           </Button>
           <div className="match-tip">
             <strong>PIT TIP</strong>
-            <p>Correct pattern colors score 8. Other colors still score 5.</p>
+            <p>
+              ARTIFACTS score nothing alone. Fill the GOAL to {tipAt} and it
+              tips for {TIP_POINTS}, spilling them back onto the mats.
+            </p>
           </div>
         </aside>
       </div>

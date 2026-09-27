@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+﻿@import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
@@ -725,7 +725,7 @@ button {
   color: #718d9e;
   font-size: 12px;
 }
-.pattern-brief {
+.tip-brief {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -734,23 +734,23 @@ button {
   border-left: 3px solid #ad65ec;
   background: rgba(24, 44, 58, 0.55);
 }
-.pattern-brief .eyebrow {
+.tip-brief .eyebrow {
   margin-bottom: 4px;
 }
-.pattern-brief strong {
+.tip-brief strong {
   color: #e8d8f6;
   font-family: var(--font-geist-mono);
   font-size: 14px;
   letter-spacing: 0.06em;
 }
-.pattern-brief > p {
+.tip-brief > p {
   margin: 0;
   color: #99adba;
   font-size: 11px;
   line-height: 1.5;
   text-align: right;
 }
-.pattern-brief b {
+.tip-brief b {
   color: var(--primary);
   font-size: 18px;
 }
@@ -958,49 +958,6 @@ button {
   width: 100%;
   height: 100%;
   touch-action: none;
-}
-.pattern-card {
-  position: absolute;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 10px 7px 12px;
-  border: 1px solid rgba(87, 124, 145, 0.75);
-  border-radius: 7px;
-  background: rgba(7, 18, 27, 0.88);
-  backdrop-filter: blur(8px);
-}
-.pattern-card > span {
-  color: #7f99a9;
-  font-family: var(--font-geist-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-.pattern-card > div {
-  display: flex;
-  gap: 4px;
-}
-.pattern-card i {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-family: var(--font-geist-mono);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 800;
-}
-.pattern-card .purple {
-  background: #a966ef;
-  color: #f5eaff;
-}
-.pattern-card .green {
-  background: #b6ed4e;
-  color: #142a08;
 }
 .bot-intent {
   position: absolute;
@@ -1525,7 +1482,7 @@ kbd {
   .mission-strip > svg {
     display: none;
   }
-  .pattern-brief {
+  .tip-brief {
     align-items: flex-start;
     gap: 14px;
   }
@@ -1560,13 +1517,6 @@ kbd {
   }
   .arena-stage {
     min-height: 64vw;
-  }
-  .pattern-card {
-    top: 8px;
-    gap: 6px;
-  }
-  .pattern-card > span {
-    display: none;
   }
   .bot-intent {
     display: none;

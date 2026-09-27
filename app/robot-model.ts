@@ -517,25 +517,40 @@ function addCollector(
   armRight.position.x = 1.7;
   group.add(armLeft, armRight);
 
-  if (id === 'pinpoint') {
-    const pivot = new THREE.Group();
-    const clawLeft = box(0.16, 0.18, 1.05, palette.yellow);
-    clawLeft.position.set(-0.43, 0.55, 3.05);
-    clawLeft.rotation.y = -0.55;
-    const clawRight = clawLeft.clone();
-    clawRight.position.x = 0.43;
-    clawRight.rotation.y = 0.55;
-    pivot.add(clawLeft, clawRight);
-    group.add(pivot);
-    moving.intake = pivot;
-  } else if (id === 'sidesweep') {
-    const leftWing = box(1.0, 0.1, 1.12, palette.orange, { roughness: 0.52 });
-    leftWing.position.set(-1.3, 0.45, 3.0);
-    leftWing.rotation.y = -0.4;
-    const rightWing = leftWing.clone();
-    rightWing.position.x = 1.3;
-    rightWing.rotation.y = 0.4;
-    group.add(leftWing, rightWing);
+  if (id === 'dualjaw') {
+    // Two jaws that close on a pair at once.
+    const jaws = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const jaw = box(0.22, 0.5, 1.5, palette.yellow, { metalness: 0.5 });
+      jaw.position.set(side * 0.85, 0.52, 3.15);
+      jaw.rotation.y = side * 0.32;
+      jaws.add(jaw);
+      const pad = box(0.1, 0.42, 1.3, palette.rubber, { roughness: 1 });
+      pad.position.set(side * 0.7, 0.52, 3.15);
+      pad.rotation.y = side * 0.32;
+      jaws.add(pad);
+    }
+    jaws.userData.roller = true;
+    group.add(jaws);
+    moving.intake = jaws;
+  } else if (id === 'sorter') {
+    // A funnel narrow enough that only the big purples wedge into it.
+    const funnel = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.15, 0.5, 0.95, 10, 1, true),
+      material(0x9156d9, { roughness: 0.5, side: THREE.DoubleSide }),
+    );
+    funnel.rotation.x = Math.PI / 2.2;
+    funnel.position.set(0, 0.72, 3.1);
+    funnel.castShadow = true;
+    funnel.userData.roller = true;
+    group.add(funnel);
+    const lip = new THREE.Mesh(
+      new THREE.TorusGeometry(1.15, 0.07, 8, 20),
+      material(palette.aluminum, { metalness: 0.6 }),
+    );
+    lip.rotation.x = Math.PI / 2.2;
+    lip.position.set(0, 0.95, 3.45);
+    group.add(lip);
     moving.intake = group;
   } else {
     const rollers = new THREE.Group();

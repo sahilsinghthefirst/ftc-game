@@ -27,7 +27,12 @@ const blue = 0x359be5,
 const position = (x: number, z: number, y = 0.08) =>
   new THREE.Vector3((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
-function artifact(color: string, radius = 0.28) {
+// Purple ARTIFACTS are the big ones - the same 1.28x the physics uses for
+// their footprint, so what you see matches what you bump into.
+export const PURPLE_SCALE = 1.28;
+
+function artifact(color: string, base = 0.28) {
+  const radius = color === 'P' ? base * PURPLE_SCALE : base;
   const group = new THREE.Group();
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 20, 14),
@@ -294,8 +299,6 @@ function arenaRoom(scene: THREE.Scene) {
   );
   obelisk.castShadow = true;
   place(scene, obelisk, 0, 1.38, 0.02);
-  const pLabel = label('P  G  P', 1.25, 0.35, '#253947', '#e9c767');
-  place(scene, pLabel, 0, 1.12, 0.8);
   const blueSpot = position(BLUE_GOAL.x, BLUE_GOAL.y);
   const redSpot = position(RED_GOAL.x, RED_GOAL.y);
   goal(scene, blueSpot.x, blueSpot.z, blue, 'BLUE GOAL');
@@ -500,7 +503,8 @@ export function createArenaScene(
   resize();
   resetArenaCamera();
   let disposed = false;
-  const render = (dt: number, state: World, paused: boolean) => {
+  const render = (dt: number, state: World, paused: boolean, alpha = 1) => {
+    const tween = (from: number, to: number) => from + (to - from) * alpha;
     if (disposed) return;
     for (const particle of state.particles) {
       if (!particle.text || scoreLabels.has(particle)) continue;
@@ -528,7 +532,9 @@ export function createArenaScene(
     const models = [player, bot];
     models.forEach((model, index) => {
       const actor = actors[index];
-      model.root.position.copy(position(actor.x, actor.y, 0.07));
+      model.root.position.copy(
+        position(tween(actor.px, actor.x), tween(actor.py, actor.y), 0.07),
+      );
       const angle = Math.PI / 2 - actor.angle;
       const error = Math.atan2(
         Math.sin(angle - model.root.rotation.y),
@@ -645,10 +651,20 @@ export function createArenaScene(
     state.pieces.forEach((piece) => {
       const mesh = pieces.get(piece.id)!;
       if (piece.active) {
-        mesh.position.copy(position(piece.x, piece.y, 0.34));
+        // Pickup pulls the mesh out of the scene and flies a copy into the
+        // robot. A tipped GOAL puts that ARTIFACT back on the mats, so its mesh
+        // has to go back in or it stays invisible for the rest of the match.
+        if (mesh.parent !== scene) scene.add(mesh);
+        mesh.position.copy(
+          position(tween(piece.px, piece.x), tween(piece.py, piece.y), 0.34),
+        );
         if (!paused) {
-          mesh.rotation.x += ((piece.vy ?? 0) * SCALE * dt) / 0.28;
-          mesh.rotation.z -= ((piece.vx ?? 0) * SCALE * dt) / 0.28;
+          // True rolling speed turns a fast ARTIFACT into a blur, so the spin
+          // is capped: it still reads as rolling, just without the strobing.
+          const spin =
+            260 / Math.max(260, Math.hypot(piece.vx ?? 0, piece.vy ?? 0));
+          mesh.rotation.x += ((piece.vy ?? 0) * spin * SCALE * dt) / 0.28;
+          mesh.rotation.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / 0.28;
         }
       }
       if (!piece.active && mesh.parent === scene) {

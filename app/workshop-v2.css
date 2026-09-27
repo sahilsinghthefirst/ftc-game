@@ -1,4 +1,4 @@
-/* FieldLab workshop redesign: a tactile FTC pit, not a software dashboard. */
+﻿/* FieldLab workshop redesign: a tactile FTC pit, not a software dashboard. */
 
 .pit-app {
   min-height: 100vh;
@@ -1188,7 +1188,7 @@
 }
 
 .part-tile-copy > div i::before {
-  content: '– ';
+  content: 'â€“ ';
 }
 
 .pit-lesson {
@@ -1434,12 +1434,6 @@
   background: #eee9df;
   color: #26363c;
 }
-
-.scoreboard,
-.pattern-card {
-  border-radius: 3px;
-}
-
 .briefing-screen,
 .results-screen {
   background:
@@ -1534,22 +1528,22 @@
   color: #707a7d;
 }
 
-.pattern-brief {
+.tip-brief {
   border: 1px solid #d8c89c;
   border-left: 5px solid #e0a82a;
   background: #fff5d8;
 }
 
-.pattern-brief strong {
+.tip-brief strong {
   color: #5f426d;
   font-family: var(--font-geist-sans);
 }
 
-.pattern-brief > p {
+.tip-brief > p {
   color: #6f6c5f;
 }
 
-.pattern-brief b {
+.tip-brief b {
   color: #b84428;
 }
 
@@ -1683,30 +1677,6 @@
 .arena-stage {
   background: #343b3d;
 }
-
-.pattern-card {
-  border: 1px solid #a59d90;
-  background: rgba(248, 244, 235, 0.91);
-  box-shadow: 0 3px 0 rgba(30, 37, 39, 0.25);
-  backdrop-filter: blur(4px);
-}
-
-.pattern-card > span {
-  color: #596468;
-  font-family: var(--font-geist-sans);
-  font-weight: 800;
-}
-
-.pattern-card .purple {
-  background: #8153a8;
-  color: #fff;
-}
-
-.pattern-card .green {
-  background: #8baa3c;
-  color: #182617;
-}
-
 .bot-intent {
   padding: 6px 8px;
   border-right: 3px solid #d84b50;

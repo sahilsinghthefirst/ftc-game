@@ -43,7 +43,12 @@ import {
 } from '@/components/ui/dialog';
 import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
+import { PURPLE_TIP_VALUE, TIP_POINTS, GOAL_TIP_AT } from './match-guidance';
 import { Robot3DBay } from './robot-3d';
+
+const tipAt = GOAL_TIP_AT;
+const purpleValue = PURPLE_TIP_VALUE;
+const tipPoints = TIP_POINTS;
 
 const sceneFadeMs = 300;
 const sceneHoldMs = 90;
@@ -140,12 +145,12 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Comet Mecanum',
     code: 'DRV-01',
-    blurb: 'Glides sideways to line up fast.',
+    blurb: 'Slides sideways to line up on the GOAL.',
     strength: 'Moves in every direction',
-    tradeoff: 'Uses more power',
-    traits: { speed: 4, handling: 1, control: 3, collect: 0, score: 0 },
+    tradeoff: 'Drinks battery',
+    traits: { speed: 5, handling: 0, control: 2, collect: 0, score: 0 },
     weight: 3,
-    power: 4,
+    power: 5,
     space: 3,
   },
   {
@@ -153,11 +158,11 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Trailblazer 6WD',
     code: 'DRV-02',
-    blurb: 'Pushes hard and tracks straight.',
-    strength: 'Stable under contact',
-    tradeoff: 'Wide turning circle',
-    traits: { speed: 2, handling: 2, control: 4, collect: 0, score: 0 },
-    weight: 4,
+    blurb: 'Six wheels that pile on speed in a straight line.',
+    strength: 'Fast in a straight line, wins every push',
+    tradeoff: 'Turns like a bus',
+    traits: { speed: 5, handling: 3, control: 2, collect: 0, score: 0 },
+    weight: 5,
     power: 3,
     space: 4,
   },
@@ -166,11 +171,11 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Orbit Omni',
     code: 'DRV-03',
-    blurb: 'Light, quick, and easy to turn.',
-    strength: 'Fast acceleration',
-    tradeoff: 'Slides when stopping',
-    traits: { speed: 4, handling: -2, control: 2, collect: 0, score: 0 },
-    weight: 2,
+    blurb: 'The fastest base on the mats.',
+    strength: 'Huge top speed',
+    tradeoff: 'Skates straight past the GOAL',
+    traits: { speed: 6, handling: -3, control: 0, collect: 0, score: 0 },
+    weight: 1,
     power: 3,
     space: 2,
   },
@@ -179,10 +184,10 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Anchor Traction',
     code: 'DRV-04',
-    blurb: 'A compact base with serious grip.',
-    strength: 'Precise control',
-    tradeoff: 'Lower top speed',
-    traits: { speed: 1, handling: 3, control: 5, collect: 0, score: 0 },
+    blurb: 'Grips hard and stops on a dime.',
+    strength: 'Starts and stops instantly',
+    tradeoff: 'Slowest base here',
+    traits: { speed: -1, handling: 5, control: 3, collect: 0, score: 0 },
     weight: 3,
     power: 2,
     space: 2,
@@ -192,11 +197,11 @@ const modules: Module[] = [
     category: 'collect',
     name: 'WideWave Roller',
     code: 'INT-01',
-    blurb: 'Sweeps up ARTIFACTS across the front.',
-    strength: 'Large pickup zone',
-    tradeoff: 'Adds front weight',
-    traits: { speed: 0, handling: -1, control: 0, collect: 5, score: 0 },
-    weight: 3,
+    blurb: 'A light, wide sweeper that scoops from anywhere in front.',
+    strength: 'Huge pickup zone, barely any weight',
+    tradeoff: 'Crawls while it swallows each one',
+    traits: { speed: 3, handling: 1, control: -1, collect: 1, score: 0 },
+    weight: 1,
     power: 3,
     space: 3,
   },
@@ -205,38 +210,38 @@ const modules: Module[] = [
     category: 'collect',
     name: 'TwinFlex Intake',
     code: 'INT-02',
-    blurb: 'Two soft rollers pull pieces in quickly.',
-    strength: 'Fast collection',
-    tradeoff: 'Can grab the wrong color',
-    traits: { speed: 0, handling: 0, control: 0, collect: 4, score: 0 },
-    weight: 2,
+    blurb: 'Heavy twin rollers that inhale an ARTIFACT on contact.',
+    strength: 'Grabs one almost instantly',
+    tradeoff: 'Heavy, and slows the whole robot',
+    traits: { speed: -3, handling: -1, control: 0, collect: 5, score: 0 },
+    weight: 5,
+    power: 5,
+    space: 3,
+  },
+  {
+    id: 'dualjaw',
+    category: 'collect',
+    name: 'DualJaw Grabber',
+    code: 'INT-03',
+    blurb: 'Two jaws that close on a pair of ARTIFACTS at once.',
+    strength: 'Takes two in one grab',
+    tradeoff: 'Slow, and only when they lie together',
+    traits: { speed: -1, handling: -1, control: 1, collect: 4, score: 0 },
+    weight: 4,
     power: 4,
     space: 3,
   },
   {
-    id: 'pinpoint',
+    id: 'sorter',
     category: 'collect',
-    name: 'Pinpoint Claw',
-    code: 'INT-03',
-    blurb: 'Grabs one exact piece at a time.',
-    strength: 'Very accurate',
-    tradeoff: 'Small pickup zone',
-    traits: { speed: 0, handling: 1, control: 1, collect: 2, score: 1 },
+    name: 'PurpleSort Funnel',
+    code: 'INT-04',
+    blurb: 'A funnel shaped to swallow only the big purple ARTIFACTS.',
+    strength: 'Fills the GOAL fastest at 1.5 a time',
+    tradeoff: 'Drives straight past every green',
+    traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
     power: 2,
-    space: 2,
-  },
-  {
-    id: 'sidesweep',
-    category: 'collect',
-    name: 'SideSweep Scoop',
-    code: 'INT-04',
-    blurb: 'Funnels loose pieces into the robot.',
-    strength: 'Works while turning',
-    tradeoff: 'Slower intake',
-    traits: { speed: 0, handling: 0, control: 0, collect: 3, score: 0 },
-    weight: 2,
-    power: 1,
     space: 4,
   },
   {
@@ -244,10 +249,10 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Low Rider Hopper',
     code: 'STR-01',
-    blurb: 'Keeps three pieces low and steady.',
-    strength: 'Easy to control',
-    tradeoff: 'Small capacity',
-    traits: { speed: 1, handling: 1, control: 2, collect: 0, score: 0 },
+    blurb: 'An open bin that swallows a big purple whole.',
+    strength: 'Purples take one slot, not two',
+    tradeoff: 'Only four slots',
+    traits: { speed: 1, handling: 2, control: 1, collect: 0, score: 0 },
     weight: 2,
     power: 0,
     space: 3,
@@ -257,11 +262,11 @@ const modules: Module[] = [
     category: 'carry',
     name: 'StackPack Magazine',
     code: 'STR-02',
-    blurb: 'Stores up to five ARTIFACTS.',
-    strength: 'High capacity',
-    tradeoff: 'Tall and heavy',
-    traits: { speed: -1, handling: -1, control: -1, collect: 2, score: 1 },
-    weight: 4,
+    blurb: 'Seven slots stacked high over the deck.',
+    strength: 'Carries the most per trip',
+    tradeoff: 'Tall, heavy and sluggish',
+    traits: { speed: -2, handling: -3, control: -2, collect: 1, score: 0 },
+    weight: 5,
     power: 1,
     space: 4,
   },
@@ -270,12 +275,12 @@ const modules: Module[] = [
     category: 'carry',
     name: 'BeltBridge',
     code: 'STR-03',
-    blurb: 'Moves pieces straight to the scorer.',
-    strength: 'Quick transfers',
-    tradeoff: 'Constant power draw',
+    blurb: 'Feeds ARTIFACTS straight on to the scorer.',
+    strength: 'Loads the GOAL without pausing',
+    tradeoff: 'Always drawing power',
     traits: { speed: 0, handling: 0, control: 0, collect: 1, score: 2 },
     weight: 2,
-    power: 3,
+    power: 5,
     space: 3,
   },
   {
@@ -283,10 +288,10 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Pocket Indexer',
     code: 'STR-04',
-    blurb: 'Queues two pieces in the right order.',
-    strength: 'Never jams',
-    tradeoff: 'Only holds two',
-    traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 2 },
+    blurb: 'The lightest way to carry two.',
+    strength: 'Almost no weight at all',
+    tradeoff: 'Two slots, so one purple fills it',
+    traits: { speed: 2, handling: 3, control: 0, collect: 0, score: 1 },
     weight: 1,
     power: 2,
     space: 2,
@@ -296,11 +301,11 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Cascade Slides',
     code: 'RCH-01',
-    blurb: 'Extends high while staying compact.',
-    strength: 'Longest reach',
-    tradeoff: 'Heavy at full height',
-    traits: { speed: 0, handling: -1, control: -1, collect: 0, score: 4 },
-    weight: 4,
+    blurb: 'Loads the GOAL from well back in the field.',
+    strength: 'By far the longest reach',
+    tradeoff: 'Heavy and top-sway at full height',
+    traits: { speed: 0, handling: -3, control: -2, collect: 0, score: 3 },
+    weight: 5,
     power: 4,
     space: 3,
   },
@@ -309,10 +314,10 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Arc Pivot Arm',
     code: 'RCH-02',
-    blurb: 'Sweeps smoothly from collect to score.',
-    strength: 'Simple and reliable',
-    tradeoff: 'Needs clear space',
-    traits: { speed: 0, handling: -1, control: 1, collect: 1, score: 3 },
+    blurb: 'A simple arm that swings up to the rim.',
+    strength: 'Light and never jams',
+    tradeoff: 'Must drive right up to the GOAL',
+    traits: { speed: 1, handling: -1, control: 0, collect: 0, score: 1 },
     weight: 3,
     power: 3,
     space: 4,
@@ -322,10 +327,10 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Compact Elevator',
     code: 'RCH-03',
-    blurb: 'Raises the scorer straight upward.',
-    strength: 'Easy to aim',
-    tradeoff: 'Medium reach',
-    traits: { speed: 0, handling: 0, control: 2, collect: 0, score: 3 },
+    blurb: 'Lifts straight up, easy to line up.',
+    strength: 'Steady and predictable',
+    tradeoff: 'Middling reach',
+    traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 3,
     power: 3,
     space: 3,
@@ -335,11 +340,11 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Orbit Turret',
     code: 'RCH-04',
-    blurb: 'Turns the scorer without moving the base.',
-    strength: 'Scores from any angle',
-    tradeoff: 'Uses lots of space',
-    traits: { speed: 0, handling: -1, control: 1, collect: 0, score: 4 },
-    weight: 3,
+    blurb: 'Swings the scorer out over the GOAL.',
+    strength: 'Reaches from well out',
+    tradeoff: 'Eats space and weight',
+    traits: { speed: 0, handling: -2, control: 1, collect: 0, score: 2 },
+    weight: 4,
     power: 3,
     space: 5,
   },
@@ -348,12 +353,12 @@ const modules: Module[] = [
     category: 'score',
     name: 'Burst Feeder',
     code: 'SCR-01',
-    blurb: 'Sends pieces through the GOAL quickly.',
-    strength: 'Rapid scoring',
+    blurb: 'Fires ARTIFACTS into the GOAL back to back.',
+    strength: 'Fills the GOAL fastest',
     tradeoff: 'Needs careful aim',
-    traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 5 },
+    traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 3 },
     weight: 2,
-    power: 4,
+    power: 5,
     space: 3,
   },
   {
@@ -361,10 +366,10 @@ const modules: Module[] = [
     category: 'score',
     name: 'TrueGate Indexer',
     code: 'SCR-02',
-    blurb: 'Releases exactly one piece on command.',
-    strength: 'Highly accurate',
-    tradeoff: 'Slower cycle',
-    traits: { speed: 0, handling: 1, control: 2, collect: 0, score: 4 },
+    blurb: 'Drops exactly one ARTIFACT per press.',
+    strength: 'Never double-feeds',
+    tradeoff: 'Slow between shots',
+    traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 1 },
     weight: 2,
     power: 2,
     space: 2,
@@ -374,10 +379,10 @@ const modules: Module[] = [
     category: 'score',
     name: 'TipTray',
     code: 'SCR-03',
-    blurb: 'Dumps a whole load in one motion.',
-    strength: 'Big scoring bursts',
-    tradeoff: 'Long reload',
-    traits: { speed: 0, handling: 1, control: 0, collect: 1, score: 4 },
+    blurb: 'Tips the whole load into the GOAL at once.',
+    strength: 'Empties your storage in one motion',
+    tradeoff: 'Very long reload',
+    traits: { speed: 0, handling: 1, control: 0, collect: 0, score: 2 },
     weight: 2,
     power: 2,
     space: 4,
@@ -387,12 +392,12 @@ const modules: Module[] = [
     category: 'score',
     name: 'Vector Flywheel',
     code: 'SCR-04',
-    blurb: 'Launches from farther away.',
-    strength: 'Scores at range',
-    tradeoff: 'High power draw',
-    traits: { speed: 1, handling: -1, control: -1, collect: 0, score: 5 },
+    blurb: 'Launches ARTIFACTS from across the mats.',
+    strength: 'Loads the GOAL at range',
+    tradeoff: 'Drinks power and rocks the robot',
+    traits: { speed: 1, handling: -2, control: -2, collect: 0, score: 2 },
     weight: 3,
-    power: 5,
+    power: 6,
     space: 3,
   },
   {
@@ -400,10 +405,10 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Color Eye',
     code: 'SNS-01',
-    blurb: 'Recognizes purple and green instantly.',
-    strength: 'Pattern hint',
-    tradeoff: 'No driving help',
-    traits: { speed: 0, handling: 0, control: 0, collect: 1, score: 2 },
+    blurb: 'Keeps collecting until your storage is full.',
+    strength: 'Fills up before every trip to the GOAL',
+    tradeoff: 'No help driving',
+    traits: { speed: 0, handling: 0, control: 0, collect: 3, score: 0 },
     weight: 1,
     power: 1,
     space: 1,
@@ -413,10 +418,10 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Range Finder',
     code: 'SNS-02',
-    blurb: 'Shows the perfect scoring distance.',
-    strength: 'Distance guide',
-    tradeoff: 'Works only near GOAL',
-    traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 2 },
+    blurb: 'Shows when the GOAL is close enough to load.',
+    strength: 'Never wastes a trip',
+    tradeoff: 'Only useful at the GOAL',
+    traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 1,
     power: 1,
     space: 1,
@@ -426,10 +431,10 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Auto Align',
     code: 'SNS-03',
-    blurb: 'Helps rotate toward the target.',
-    strength: 'Aim assistance',
-    tradeoff: 'Small speed penalty',
-    traits: { speed: -1, handling: 1, control: 3, collect: 0, score: 2 },
+    blurb: 'Squares the robot up to the GOAL for you.',
+    strength: 'Wide aim assist',
+    tradeoff: 'Costs real top speed',
+    traits: { speed: -3, handling: 1, control: 3, collect: 0, score: 1 },
     weight: 1,
     power: 2,
     space: 1,
@@ -439,16 +444,15 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Pathfinder',
     code: 'SNS-04',
-    blurb: 'Highlights an efficient route.',
-    strength: 'Route guidance',
-    tradeoff: 'No scoring bonus',
-    traits: { speed: 1, handling: 2, control: 2, collect: 0, score: 0 },
+    blurb: 'Draws the quickest route to the next ARTIFACT.',
+    strength: 'Keeps your cycles short',
+    tradeoff: 'No help at the GOAL',
+    traits: { speed: 1, handling: 3, control: 1, collect: 0, score: 0 },
     weight: 1,
     power: 2,
     space: 1,
   },
 ];
-
 const starter: Record<Category, string> = {
   drive: 'comet',
   collect: 'widewave',
@@ -489,7 +493,7 @@ const blueprints: {
     note: 'Slower, but very accurate',
     loadout: {
       drive: 'anchor',
-      collect: 'pinpoint',
+      collect: 'twinflex',
       carry: 'pocket',
       reach: 'elevator',
       score: 'truegate',
@@ -520,7 +524,7 @@ const traitLabels: { id: Trait; label: string; hint: string }[] = [
   },
   { id: 'control', label: 'Control', hint: 'How steady it is while driving' },
   { id: 'collect', label: 'Collect', hint: 'How easily it picks ARTIFACTS up' },
-  { id: 'score', label: 'Score', hint: 'How well it scores what it carries' },
+  { id: 'score', label: 'Score', hint: 'How quickly it loads the GOAL' },
 ];
 
 function HowItWorks() {
@@ -643,9 +647,9 @@ function Briefing({
           <p className="eyebrow">MATCH 01 / DRIVER BRIEFING</p>
           <h1>Collect. Match. Get home.</h1>
           <p className="briefing-lead">
-            Your robot is ready. Score purple and green ARTIFACTS in the blue
-            GOAL, follow the target PATTERN for bonus points, and reach BASE
-            before the horn.
+            Your robot is ready. ARTIFACTS score nothing on their own - load the
+            blue GOAL until it tips for {tipPoints} points, then chase the ones
+            it spills. Reach BASE before the horn.
           </p>
           <div className="mission-strip">
             <div>
@@ -656,8 +660,8 @@ function Briefing({
             <ChevronRight />
             <div>
               <span>2</span>
-              <strong>SCORE</strong>
-              <p>Carry pieces to your GOAL</p>
+              <strong>TIP</strong>
+              <p>Load {tipAt} of GOAL value</p>
             </div>
             <ChevronRight />
             <div>
@@ -666,15 +670,15 @@ function Briefing({
               <p>Get to BASE in the final 10</p>
             </div>
           </div>
-          <div className="pattern-brief">
+          <div className="tip-brief">
             <div>
-              <p className="eyebrow">TARGET PATTERN</p>
-              <strong>PURPLE · GREEN · PURPLE</strong>
+              <p className="eyebrow">TIPPING THE GOAL</p>
+              <strong>PURPLE {purpleValue} · GREEN 1</strong>
             </div>
             <p>
-              <b>8</b> points in pattern
+              <b>{tipPoints}</b> points at {tipAt}
               <br />
-              <span>5 points otherwise</span>
+              <span>big purples fill two storage slots</span>
             </p>
           </div>
         </section>
@@ -806,8 +810,8 @@ function Results({
               <strong>{result.scored}</strong>
             </div>
             <div>
-              <span>PATTERN HITS</span>
-              <strong>{result.patternMatches}</strong>
+              <span>GOAL TIPS</span>
+              <strong>{result.tips}</strong>
             </div>
             <div>
               <span>BASE BONUS</span>
@@ -983,10 +987,7 @@ export function FieldLab() {
     [selectedModules],
   );
 
-  const chooseModule = (
-    module: Module,
-    mode: 'drag' | 'tap' | 'tool' = 'tap',
-  ) => {
+  const chooseModule = (module: Module, mode: 'drag' | 'tap' = 'tap') => {
     setSelected((current) => ({ ...current, [module.category]: module.id }));
     setBlueprint('custom');
     setCategory(module.category);
@@ -1049,9 +1050,14 @@ export function FieldLab() {
   const finishPartDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const current = dragRef.current;
     if (!current || current.pointerId !== event.pointerId) return;
+    // Parts only go on by being carried to the mount. A tap that never leaves
+    // the tray puts the part back rather than installing it.
     const overStage = pointIsOverStage(event.clientX, event.clientY);
     if (overStage) chooseModule(current.module, 'drag');
-    else if (!current.moved) chooseModule(current.module, 'tap');
+    else if (!current.moved)
+      setSnapNote(
+        `Pick ${current.module.name} up and drop it on the pulsing ${buildInfo[current.module.category].mount.toLowerCase()} to fit it.`,
+      );
     else
       setSnapNote(
         `${current.module.name} returned to the tray. Drop it on the pulsing mount to install it.`,
@@ -1480,7 +1486,7 @@ export function FieldLab() {
                   <strong>{item.label}</strong>
                   <small>
                     {picked.name.replace(
-                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|Pinpoint|SideSweep|Low Rider|StackPack|BeltBridge|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Color|Range|Auto|Pathfinder)\s?/i,
+                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|Low Rider|StackPack|BeltBridge|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Color|Range|Auto|Pathfinder)\s?/i,
                       '',
                     )}
                   </small>
@@ -1511,7 +1517,7 @@ export function FieldLab() {
                   className={`part-tile ${isSelected ? 'is-installed' : ''}`}
                   key={module.id}
                   aria-pressed={isSelected}
-                  aria-label={`${module.name}. ${isSelected ? 'Installed.' : ''} Drag to the robot or press Enter to install.`}
+                  aria-label={`${module.name}. ${isSelected ? 'Installed.' : ''} Drag onto the robot to fit it, or press Enter.`}
                   onPointerDown={(event) => startPartDrag(module, event)}
                   onPointerMove={movePartDrag}
                   onPointerUp={finishPartDrag}
