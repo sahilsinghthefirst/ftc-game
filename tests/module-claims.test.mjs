@@ -178,14 +178,14 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
     jaws.dragFor,
   );
 
-  // PurpleSort: "Drives straight past every yellow".
+  // NectarSort: "Drives straight past all POLLEN".
   assert.equal(sorter.takes, 'P');
   assert.equal(collectorTakes('sorter', 'P'), true);
   assert.equal(collectorTakes('sorter', 'G'), false);
   assert.equal(collectorTakes('widewave', 'G'), true);
 });
 
-test('storage cards match their slot counts and purple handling', () => {
+test('storage cards match their slot counts and NECTAR handling', () => {
   // The numbers each card states.
   assert.equal(carryCapacity('pocket'), 4);
   assert.equal(carryCapacity('lowbin'), 4);
@@ -204,7 +204,7 @@ test('storage cards match their slot counts and purple handling', () => {
     byId.stackpack.weight,
   );
 
-  // Low Rider Hopper: "Purples take one slot, not two".
+  // Low Rider Hopper: "NECTAR takes one slot, not two".
   assert.equal(BIG_ARTIFACT_STORAGE, 'lowbin');
   assert.equal(artifactSpace('P', 'lowbin'), 1);
   for (const part of inCategory('carry'))
@@ -337,7 +337,7 @@ test('each assist guides a different part of the match, none all of it', () => {
 
 test('no card still describes the old ruleset', () => {
   const stale =
-    /pattern|8 points|5 points|five ARTIFACTS|wrong color|skip|seven|carry two/i;
+    /pattern|8 points|5 points|five ARTIFACTS|wrong color|skip|seven|carry two|purple|green/i;
   for (const part of modules) {
     const copy = `${part.blurb} ${part.strength} ${part.tradeoff}`;
     assert.ok(!stale.test(copy), `${part.name} still says: ${copy}`);

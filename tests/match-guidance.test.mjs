@@ -10,11 +10,12 @@ import {
   tipValue,
   usedSpace,
   goalTips,
+  mayCollect,
   playerTarget,
   GOAL_TIP_AT,
   TIP_POINTS,
 } from '../app/match-guidance.ts';
-import { pieceLayout } from '../app/field.ts';
+import { FIELD_SIZE, pieceLayout } from '../app/field.ts';
 
 const loadout = { carry: 'lowbin', collect: 'widewave', assist: 'range' };
 function world() {
@@ -22,7 +23,7 @@ function world() {
     player: { x: 0, y: 0, carried: ['P'] },
     bot: { carried: ['G'] },
     pieces: [
-      { id: 0, x: 10, y: 0, color: 'P', active: true },
+      { id: 0, x: 10, y: 0, color: 'P', alliance: 'blue', active: true },
       { id: 1, x: 30, y: 0, color: 'G', active: true },
     ],
     time: 42,
@@ -41,12 +42,14 @@ test('An empty robot is guided to the nearest ARTIFACT it can take', () => {
   assert.equal(playerTarget(state, loadout).id, 1);
 });
 
-test('A PurpleSort robot is guided past yellows to a purple', () => {
+test('A NectarSort robot is guided past POLLEN to its NECTAR', () => {
   const state = world();
   state.player.carried = [];
-  // The yellow is nearer, but the sorter would drive straight over it.
+  // The POLLEN is nearer, but the sorter would drive straight over it.
   state.pieces[0].color = 'G';
+  delete state.pieces[0].alliance;
   state.pieces[1].color = 'P';
+  state.pieces[1].alliance = 'blue';
   const target = playerTarget(state, { ...loadout, collect: 'sorter' });
   assert.equal(target.color, 'P');
 });
@@ -74,14 +77,14 @@ test('Returning to base still takes priority in the final ten seconds', () => {
 
 test('The goal tips at a flat ten, whatever is lying on the mats', () => {
   assert.equal(GOAL_TIP_AT, 10);
-  // Reachable both ways: seven purples clear it, so do ten yellows.
-  const purples = Array(7)
+  // Reachable both ways: seven NECTAR clear it, so do ten POLLEN.
+  const nectar = Array(7)
     .fill('P')
     .reduce((t, c) => t + tipValue(c), 0);
   const yellows = Array(10)
     .fill('G')
     .reduce((t, c) => t + tipValue(c), 0);
-  assert.ok(purples >= GOAL_TIP_AT);
+  assert.ok(nectar >= GOAL_TIP_AT);
   assert.ok(yellows >= GOAL_TIP_AT);
   // And the field holds far more than one GOAL needs, so a tip is never the
   // last thing that can happen in a match.
@@ -91,7 +94,7 @@ test('The goal tips at a flat ten, whatever is lying on the mats', () => {
   );
 });
 
-test('Purple ARTIFACTS are worth more but eat more storage', () => {
+test('NECTAR is worth more but eats more storage', () => {
   assert.equal(tipValue('P'), 1.5);
   assert.equal(tipValue('G'), 1);
 
@@ -101,15 +104,15 @@ test('Purple ARTIFACTS are worth more but eat more storage', () => {
   assert.equal(artifactSpace('G', 'stackpack'), 1);
   assert.equal(artifactSpace('G', BIG_ARTIFACT_STORAGE), 1);
 
-  // The four-slot indexer takes two purples, or a purple and two yellows.
+  // The four-slot indexer takes two NECTAR, or one and two POLLEN.
   assert.equal(carryCapacity('pocket'), 4);
   assert.equal(canCarry(['P'], 'P', 'pocket'), true);
   assert.equal(canCarry(['P', 'P'], 'G', 'pocket'), false);
   assert.equal(canCarry(['P', 'G'], 'G', 'pocket'), true);
   assert.equal(canCarry(['P', 'G'], 'P', 'pocket'), false);
 
-  // The hopper's four slots take four purples - 6 toward a tip in one trip -
-  // while the six-slot magazine only manages three purples, 4.5.
+  // The hopper's four slots take four NECTAR - 6 toward a tip in one trip -
+  // while the six-slot magazine only manages three, 4.5.
   assert.equal(carryCapacity(BIG_ARTIFACT_STORAGE), 4);
   assert.equal(usedSpace(['P', 'P', 'P', 'P'], BIG_ARTIFACT_STORAGE), 4);
   assert.equal(canCarry(['P', 'P', 'P'], 'P', BIG_ARTIFACT_STORAGE), true);
@@ -124,7 +127,7 @@ test('Purple ARTIFACTS are worth more but eat more storage', () => {
 
   const hopperTrip = ['P', 'P', 'P', 'P'].reduce((t, c) => t + tipValue(c), 0);
   const magazineTrip = ['P', 'P', 'P'].reduce((t, c) => t + tipValue(c), 0);
-  assert.ok(hopperTrip > magazineTrip, 'the hopper should win on purples');
+  assert.ok(hopperTrip > magazineTrip, 'the hopper should win on NECTAR');
 });
 
 test('The two collectors trade reach against cycle time', () => {
@@ -150,4 +153,54 @@ test('A goal only tips once it reaches the threshold', () => {
 
 test('Tipping is the only way to score, and it is worth twenty', () => {
   assert.equal(TIP_POINTS, 20);
+});
+
+test('each alliance may only take its own NECTAR, and anyone POLLEN', () => {
+  const blue = { color: 'P', alliance: 'blue' };
+  const red = { color: 'P', alliance: 'red' };
+  const pollen = { color: 'G' };
+  assert.equal(mayCollect(blue, 'blue'), true);
+  assert.equal(mayCollect(red, 'blue'), false);
+  assert.equal(mayCollect(red, 'red'), true);
+  assert.equal(mayCollect(blue, 'red'), false);
+  assert.equal(mayCollect(pollen, 'blue'), true);
+  assert.equal(mayCollect(pollen, 'red'), true);
+});
+
+test('the blue robot is never guided to red NECTAR, however close', () => {
+  const state = world();
+  state.player.carried = [];
+  state.pieces[0].alliance = 'red';
+  // The red NECTAR is nearest; the guide skips it for the POLLEN.
+  assert.equal(playerTarget(state, loadout).id, 1);
+  // With only red NECTAR left there is nothing to guide to.
+  state.pieces[1].active = false;
+  assert.equal(playerTarget(state, loadout), undefined);
+});
+
+test('the field starts fair: mirrored NECTAR for each alliance, mirrored POLLEN', () => {
+  const nectar = pieceLayout.filter(([, , color]) => color === 'P');
+  const blue = nectar.filter(([, , , alliance]) => alliance === 'blue');
+  const red = nectar.filter(([, , , alliance]) => alliance === 'red');
+  assert.equal(blue.length, red.length);
+  assert.equal(blue.length + red.length, nectar.length);
+  // Every blue NECTAR has a red twin mirrored across the field.
+  for (const [x, y] of blue)
+    assert.ok(
+      red.some(
+        ([rx, ry]) => Math.abs(rx - (FIELD_SIZE - x)) < 1e-6 && ry === y,
+      ),
+      `no red twin for ${x},${y}`,
+    );
+  // POLLEN is mirrored too (the centre line mirrors onto itself).
+  const pollen = pieceLayout.filter(([, , color]) => color === 'G');
+  for (const [x, y] of pollen)
+    assert.ok(
+      pollen.some(
+        ([px, py]) => Math.abs(px - (FIELD_SIZE - x)) < 1e-6 && py === y,
+      ),
+      `no mirrored POLLEN for ${x},${y}`,
+    );
+  // POLLEN belongs to nobody.
+  assert.ok(pollen.every(([, , , alliance]) => alliance === undefined));
 });

@@ -550,7 +550,7 @@ function addCollector(
     group.add(jaws);
     moving.intake = jaws;
   } else if (id === 'sorter') {
-    // A funnel narrow enough that only the big purples wedge into it.
+    // A funnel narrow enough that only the big NECTAR wedge into it.
     const funnel = new THREE.Mesh(
       new THREE.CylinderGeometry(1.15, 0.5, 0.95, 10, 1, true),
       material(0x9156d9, { roughness: 0.5, side: THREE.DoubleSide }),

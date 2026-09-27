@@ -1643,3 +1643,106 @@
     opacity: 0;
   }
 }
+
+/* Graphics quality picker, in the match briefing and the pause menu. */
+.graphics-picker {
+  display: grid;
+  gap: 7px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.graphics-picker-title {
+  float: left;
+  width: 100%;
+  margin: 0 0 7px;
+  padding: 0;
+}
+.graphics-picker > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.graphics-picker button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1px;
+  min-height: 42px;
+  padding: 6px 4px;
+  border: 1px solid #c9d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #2d3b40;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.graphics-picker button {
+  position: relative;
+}
+/* A dot on the tier this computer's specs recommend, echoed in the note. */
+.graphics-picker button.is-recommended::after,
+.graphics-picker-note i {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3d9a5b;
+}
+.graphics-picker button.is-recommended::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+}
+.graphics-picker-note {
+  margin: 1px 0 0;
+  color: #5b6b72;
+  font-size: 11px;
+}
+.graphics-picker-note i {
+  margin-right: 3px;
+  vertical-align: 1px;
+}
+.graphics-picker button.is-selected {
+  border-color: #b99039;
+  background: #fffbef;
+  box-shadow: inset 0 -3px #ddb34e;
+}
+.graphics-picker button:focus-visible {
+  outline: 3px solid #3c87ad;
+  outline-offset: 2px;
+}
+.immersive-match .pause-overlay .graphics-picker {
+  width: min(480px, calc(100% - 32px));
+  margin: 0 0 18px;
+}
+.immersive-match .pause-overlay .graphics-picker-title {
+  margin: 0;
+  color: #b3ccd9;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.immersive-match .pause-overlay .graphics-picker button {
+  border: 1px solid #36566a;
+  border-radius: 4px;
+  background: #173243;
+  color: #e7eef3;
+}
+.immersive-match .pause-overlay .graphics-picker button.is-selected {
+  border-color: #e6b853;
+  background: #214257;
+  box-shadow: inset 0 -3px #e6b853;
+}
+.immersive-match .pause-overlay .graphics-picker-note {
+  margin: 1px 0 0;
+  color: #b3ccd9;
+  font-size: 11px;
+}
+.briefing-side .graphics-picker {
+  margin-top: 12px;
+}

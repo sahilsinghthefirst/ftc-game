@@ -11,6 +11,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GraphicsPicker } from './graphics-picker';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
 import {
@@ -22,6 +23,7 @@ import {
   RED_BASE_ZONE,
   RED_GOAL,
   inZone,
+  type Alliance,
   pieceLayout,
 } from './field';
 import {
@@ -36,6 +38,7 @@ import {
 import {
   canCarry,
   carryCapacity,
+  mayCollect,
   collectProfile,
   collectorTakes,
   goalTips,
@@ -81,6 +84,8 @@ type Piece = {
   x: number;
   y: number;
   color: PieceColor;
+  // Which alliance may pick up a NECTAR ('P'); POLLEN ('G') has none.
+  alliance?: Alliance;
   active: boolean;
   vx?: number;
   vy?: number;
@@ -156,9 +161,16 @@ type Hud = {
 };
 
 const MATCH_TIME = 60;
-// Purple ARTIFACTS count 1.5 toward a tip and yellows 1, up to this bar.
+// NECTAR counts 1.5 toward a tip and POLLEN 1, up to this bar.
 const tipAt = GOAL_TIP_AT;
-export const PURPLE_BALL_RADIUS = 18;
+export const NECTAR_BALL_RADIUS = 18;
+
+// Burst colour for an ARTIFACT: its alliance colour for NECTAR, yellow for
+// POLLEN.
+function ink(color: PieceColor, alliance?: Alliance) {
+  if (color !== 'P') return '#f7d948';
+  return alliance === 'red' ? '#ff6b61' : '#5aa9ff';
+}
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -189,7 +201,7 @@ function createWorld(): World {
   return {
     player: { ...player, px: player.x, py: player.y, pangle: player.angle },
     bot: { ...bot, px: bot.x, py: bot.y, pangle: bot.angle },
-    pieces: pieceLayout.map(([x, y, color], id) => {
+    pieces: pieceLayout.map(([x, y, color, alliance], id) => {
       // Nudge anything that starts inside the center structure back out.
       const dx = x - CENTER_STRUCTURE.x,
         dy = y - CENTER_STRUCTURE.y,
@@ -206,8 +218,9 @@ function createWorld(): World {
         px: spotX,
         py: spotY,
         color,
+        alliance,
         active: true,
-        radius: color === 'P' ? PURPLE_BALL_RADIUS : BALL_RADIUS,
+        radius: color === 'P' ? NECTAR_BALL_RADIUS : BALL_RADIUS,
       };
     }),
     particles: [],
@@ -358,12 +371,7 @@ function releaseSpills(world: World, dt: number) {
     piece.grace = SPILL_GRACE;
     piece.collector = undefined;
     piece.release = undefined;
-    emitBurst(
-      world,
-      piece.x,
-      piece.y,
-      piece.color === 'P' ? '#b977ff' : '#f7d948',
-    );
+    emitBurst(world, piece.x, piece.y, ink(piece.color, piece.alliance));
   }
 }
 
@@ -587,6 +595,7 @@ export function GameArena({
         .filter(
           (piece) =>
             pickable(piece) &&
+            mayCollect(piece, 'blue') &&
             collectorTakes(selected.collect, piece.color) &&
             distance(world.player, piece) <= pickupRadius + alignTolerance,
         )
@@ -614,7 +623,7 @@ export function GameArena({
                 world,
                 BLUE_GOAL.x + 30,
                 BLUE_GOAL.y + index * 22,
-                color === 'P' ? '#b977ff' : '#f7d948',
+                ink(color, 'blue'),
                 `${world.playerGoal}/${tipAt}`,
               );
             });
@@ -639,7 +648,7 @@ export function GameArena({
               world,
               piece.x,
               piece.y,
-              piece.color === 'P' ? '#b977ff' : '#f7d948',
+              ink(piece.color, piece.alliance),
             );
           }
           if (taken.length > 0) {
@@ -665,17 +674,19 @@ export function GameArena({
           usedSpace(bot.carried, 'bot') >= botCapacity ||
           (world.botIntent === 'Heading to the GOAL' &&
             bot.carried.length > 0) ||
-          !world.pieces.some(pickable)
+          !world.pieces.some(
+            (piece) => pickable(piece) && mayCollect(piece, 'red'),
+          )
         ) {
           world.botTarget = RED_GOAL;
           world.botIntent = 'Heading to the GOAL';
         } else {
           const targetPiece = world.pieces
-            .filter(pickable)
+            .filter((piece) => pickable(piece) && mayCollect(piece, 'red'))
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (targetPiece) {
             world.botTarget = targetPiece;
-            world.botIntent = `Collecting ${targetPiece.color === 'P' ? 'purple' : 'yellow'}`;
+            world.botIntent = `Collecting ${targetPiece.color === 'P' ? 'NECTAR' : 'POLLEN'}`;
           }
         }
       }
@@ -722,14 +733,14 @@ export function GameArena({
             world,
             RED_GOAL.x - 30,
             RED_GOAL.y,
-            color === 'P' ? '#b977ff' : '#f7d948',
+            ink(color, 'red'),
             `${world.botGoal}/${tipAt}`,
           );
           storeInGoal(world, 'bot', [color]);
           if (goalTips(world.botGoal)) tipGoal(world, 'bot');
         } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
-            .filter(pickable)
+            .filter((item) => pickable(item) && mayCollect(item, 'red'))
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (piece && distance(bot, piece) < 43) {
             piece.active = false;
@@ -740,7 +751,7 @@ export function GameArena({
               world,
               piece.x,
               piece.y,
-              piece.color === 'P' ? '#b977ff' : '#f7d948',
+              ink(piece.color, piece.alliance),
             );
           }
         }
@@ -822,7 +833,7 @@ export function GameArena({
       const world = worldRef.current;
       if (hudClock > 0.1) {
         const nearest = world.pieces
-          .filter(pickable)
+          .filter((piece) => pickable(piece) && mayCollect(piece, 'blue'))
           .sort(
             (a, b) => distance(world.player, a) - distance(world.player, b),
           )[0];
@@ -1027,6 +1038,7 @@ export function GameArena({
               <Pause />
               <h2>Match paused</h2>
               <p>Take your time. The clock and camera are stopped.</p>
+              <GraphicsPicker tone="dark" />
               <Button
                 onClick={() => {
                   setPaused(false);

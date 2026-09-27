@@ -120,15 +120,6 @@ function hallEnvironment(renderer: THREE.WebGLRenderer) {
       panel.position.set(x, 15.8, z);
       hall.add(panel);
     }
-  // Cooler light from the far wall - the bright end of the hall.
-  const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 5),
-    new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xbfd9ff).multiplyScalar(2.2),
-    }),
-  );
-  wall.position.set(0, 7, -29.8);
-  hall.add(wall);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const environment = pmrem.fromScene(hall, 0.035);
   pmrem.dispose();
@@ -282,25 +273,29 @@ export function workshopRoom(scene: THREE.Object3D) {
     }
   for (const x of [-5.9, 5.9])
     place(scene, solid(0.06, 0.04, 9.4, 0xe2ae35), x, 0, 0);
-  place(scene, label('FIELD / LAB', 7, 1.3), -2, 5.4, -10.8);
+  // Wall signs, sized to read from the workbench camera. Stacked above the
+  // pegboard so none of them overlap it.
+  // Centred a little left of the robot, where the workbench camera looks.
+  const signX = -4.5;
+  place(scene, label('FIELD / LAB', 8.5, 1.6), signX, 6.1, -10.8);
   place(
     scene,
     label(
       'FIRST TECH CHALLENGE  /  TEAM WORKSHOP',
-      9,
-      0.48,
+      12,
+      0.8,
       '#24323b',
-      '#91a7b4',
+      '#a9bdc9',
     ),
-    -2,
-    4.3,
+    signX,
+    4.85,
     -10.78,
   );
   place(
     scene,
-    label('BUILD  /  TEST  /  IMPROVE', 7, 0.5, '#24323b', '#e6b13b'),
-    -2,
-    3.5,
+    label('BUILD  /  TEST  /  IMPROVE', 9, 0.8, '#24323b', '#e6b13b'),
+    signX,
+    3.95,
     -10.78,
   );
   for (const x of [-12, 10]) {

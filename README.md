@@ -23,18 +23,19 @@ npx tsc --noEmit
 npm run build
 ```
 
-Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. ARTIFACTS score nothing on their own: purple ones count 1.5 toward the GOAL and yellow ones 1, so the GOAL tips at 10 for 20 points and rolls those ARTIFACTS back onto the mats, where they must be visible again. Purple ARTIFACTS fill two storage slots in every module except the Low Rider Hopper.
+Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. ARTIFACTS score nothing on their own: big NECTAR counts 1.5 toward the GOAL and small yellow POLLEN 1, so the GOAL tips at 10 for 20 points and rolls those ARTIFACTS back onto the mats, where they must be visible again. NECTAR fills two storage slots in every module except the Low Rider Hopper. As in BIOBUZZ, NECTAR comes in red and blue and each robot may only pick up its own alliance's; POLLEN is anyone's.
 
 ### Graphics quality and performance
 
-FieldLab is built to run on the integrated graphics in a typical school laptop. Both 3D views render through `app/render-pipeline.ts`, which picks a starting tier from the graphics chip the browser reports (school-laptop Intel UHD/HD and Chromebook chips start on `low`) and steps down automatically if the frame rate stays below 40 fps:
+FieldLab is built to run on the integrated graphics in a typical school laptop. Both 3D views render through `app/render-pipeline.ts` at the player's graphics setting (`app/graphics-setting.ts`). Until they choose one, it is what a check of the computer's specs recommends - the graphics chip the browser reports, CPU cores and memory (school-laptop Intel UHD/HD and Chromebook chips get `medium`). Players can change it in the match briefing or the pause menu; the choice applies at once and is remembered in that browser.
 
-- `high`: half-resolution ambient occlusion, light glow, 4x MSAA, pixel ratio up to 1.5.
-- `medium`: light glow and 4x MSAA, pixel ratio up to 1.25.
-- `low`: no post-processing, built-in antialiasing, pixel ratio 1.
-- `minimal`: as `low` without shadows, drawn at 80% size and scaled up. Also used when there is no graphics chip at all.
+- `ultra`: half-resolution ambient occlusion, light glow, 4x MSAA, pixel ratio up to 1.5.
+- `high`: light glow and 4x MSAA, pixel ratio up to 1.25.
+- `medium`: no post-processing, built-in antialiasing, pixel ratio 1.
+- `low`: as `medium` without shadows, drawn at 80% size and scaled up.
+- `lowest`: as `low`, drawn at 60% size - for the very weakest machines, and recommended when there is no graphics chip at all.
 
-Add `?quality=high|medium|low|minimal` to the URL to test a tier; the active tier is shown on `<html data-render-quality>`.
+Add `?quality=ultra|high|medium|low|lowest` to the URL to force a tier for that visit when testing; the active tier is shown on `<html data-render-quality>`.
 
 Keep the draw-call count low when adding scenery - it is what limits integrated graphics. Static geometry is fused by `app/merge-static.ts` (robots per moving part, the whole venue and workshop room), repeated props such as seats, spectators and field ARTIFACTS are instanced, the workshop only redraws when something changes, and a paused match draws once and stops.
 
@@ -49,8 +50,9 @@ Keep the draw-call count low when adding scenery - it is what limits integrated 
 - `app/match-guidance.ts`: collection guidance, per-part gameplay tables, and the GOAL tipping rule.
 - `app/bot-driver.ts`: the opposing bot's steering, obstacle avoidance, and stuck recovery.
 - `app/arena-scene.ts`, `app/scene-kit.ts`: Three.js field, cameras, materials, lighting, and animations.
-- `app/render-pipeline.ts`, `app/quality.ts`: post-processing, quality tiers, and the frame-rate governor.
+- `app/render-pipeline.ts`, `app/quality.ts`, `app/graphics-setting.ts`, `app/graphics-picker.tsx`: post-processing, quality tiers, the specs check, and the graphics setting and its menu control.
 - `app/merge-static.ts`: fuses static meshes to cut draw calls.
+- `app/field-tiles.ts`: outlines of the interlocking field tiles, with an even seam between neighbours.
 - `app/textures.ts`: procedural surface textures for the hall and workshop (concrete, carpet, block wall, tread plate, pegboard, work mat).
 - `tests/`: focused gameplay regression tests.
 

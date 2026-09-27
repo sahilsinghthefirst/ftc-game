@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRobotModel, disposeObject } from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { insetOutline, tileEdges, tileOutline } from './field-tiles';
 import { mergeStaticMeshes } from './merge-static';
 import { createRenderPipeline } from './render-pipeline';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -65,14 +66,19 @@ function polycarbonate() {
   });
 }
 
-// Purple ARTIFACTS are the big ones - the same 1.28x the physics uses for
+// NECTAR are the big ARTIFACTS - the same 1.28x the physics uses for
 // their footprint, so what you see matches what you bump into.
-export const PURPLE_SCALE = 1.28;
+export const NECTAR_SCALE = 1.28;
+
+// How an ARTIFACT looks: blue or red NECTAR, or yellow POLLEN.
+type BallLook = 'B' | 'R' | 'G';
+const lookOf = (color: string, alliance?: string): BallLook =>
+  color !== 'P' ? 'G' : alliance === 'red' ? 'R' : 'B';
 
 const ARTIFACT_RADIUS = 0.28;
 // Height of an ARTIFACT's center when it sits on the mats.
 const restingHeight = (color: string) =>
-  MAT_TOP + (color === 'P' ? ARTIFACT_RADIUS * PURPLE_SCALE : ARTIFACT_RADIUS);
+  MAT_TOP + (color === 'P' ? ARTIFACT_RADIUS * NECTAR_SCALE : ARTIFACT_RADIUS);
 
 // Every ARTIFACT shares one sphere, one fused pair of seams and one material
 // per colour - built once, sized per ball by scaling. Marked shared so
@@ -95,7 +101,7 @@ function share<T extends { userData: Record<string, unknown> }>(item: T) {
 
 // Angular radius of each hole, and of the darker rim that reads as the
 // thickness of the shell round it.
-const HOLE = 0.22;
+const HOLE = 0.18;
 const HOLE_RIM = 0.07;
 
 // The perforated shell of a real ARTIFACT, as two small textures wrapped on a
@@ -200,8 +206,9 @@ function getBallParts(): BallParts {
     seam: share(
       new THREE.TorusGeometry(0.996, 0.028, 5, 48).rotateX(Math.PI / 2),
     ),
-    body: { P: body(0x8a4fd6), G: body(0xf2cf2e) },
-    seamColor: { P: seam(0x6a3aae), G: seam(0xb8961a) },
+    // BIOBUZZ colours: NECTAR in the two alliance colours, POLLEN yellow.
+    body: { B: body(0x2463d6), R: body(0xd63a33), G: body(0xf2cf2e) },
+    seamColor: { B: seam(0x17459e), R: seam(0x9e2621), G: seam(0xb8961a) },
     shadow: share(
       new THREE.MeshDepthMaterial({
         depthPacking: THREE.RGBADepthPacking,
@@ -213,10 +220,10 @@ function getBallParts(): BallParts {
   return ballParts;
 }
 
-function artifact(color: string, base = ARTIFACT_RADIUS) {
-  const radius = color === 'P' ? base * PURPLE_SCALE : base;
+function artifact(look: BallLook, base = ARTIFACT_RADIUS) {
+  const radius = look !== 'G' ? base * NECTAR_SCALE : base;
   const parts = getBallParts();
-  const key = color === 'P' ? 'P' : 'G';
+  const key = look;
   const group = new THREE.Group();
   const mesh = new THREE.Mesh(parts.sphere, parts.body[key]);
   mesh.customDepthMaterial = parts.shadow;
@@ -302,20 +309,13 @@ function seeded(seed: number) {
 function foamNormalMap() {
   const size = 256;
   const random = seeded(7);
-  // Height field: the fine raised-diamond non-slip pattern moulded into the
-  // top of an FTC soft tile, over a faint grain so it never looks printed.
+  // Height field: FTC soft tiles go down smooth side up, so the top is plain
+  // EVA foam - just its faint orange-peel grain and a gentle unevenness.
   const height = new Float32Array(size * size);
-  const diamonds = 16;
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const fx = ((x / size) * diamonds) % 1;
-      const fy = ((y / size) * diamonds) % 1;
-      const reach = Math.abs(fx - 0.5) + Math.abs(fy - 0.5);
-      // A soft-shouldered diamond: flat top, sloping sides, flat floor.
-      const rise = Math.min(1, Math.max(0, (0.42 - reach) / 0.12));
-      height[y * size + x] = rise * 0.8;
-    }
-  for (const [cells, weight] of [[64, 0.12]] as const) {
+  for (const [cells, weight] of [
+    [64, 0.35],
+    [16, 0.2],
+  ] as const) {
     const grid = Array.from({ length: cells * cells }, random);
     const step = size / cells;
     for (let y = 0; y < size; y++)
@@ -362,57 +362,6 @@ function foamNormalMap() {
   return texture;
 }
 
-// One FTC soft tile: a square whose shared edges lock into their neighbours
-// with a row of small trapezoid teeth, and whose outside edges are straight
-// border strips. `edges` runs [back, right, front, left]; +1 and -1 give
-// opposite tooth patterns (so neighbouring tiles fit together), 0 a straight
-// edge.
-const TEETH = 11;
-function matShape(size: number, depth: number, edges: number[]) {
-  const half = size / 2;
-  const corners: [number, number][] = [
-    [-half, -half],
-    [half, -half],
-    [half, half],
-    [-half, half],
-  ];
-  const shape = new THREE.Shape();
-  shape.moveTo(corners[0][0], corners[0][1]);
-  for (let edge = 0; edge < 4; edge++) {
-    const [fromX, fromY] = corners[edge];
-    const [toX, toY] = corners[(edge + 1) % 4];
-    const direction = edges[edge];
-    if (!direction) {
-      shape.lineTo(toX, toY);
-      continue;
-    }
-    // Along the edge, and straight out of the tile (corners wind
-    // counter-clockwise, so outward is the edge direction turned clockwise).
-    const ux = Math.sign(toX - fromX);
-    const uy = Math.sign(toY - fromY);
-    const nx = uy;
-    const ny = -ux;
-    const step = size / TEETH;
-    const bevel = step * 0.14;
-    // The first and last segments stay flat so corners never collide. The
-    // count is odd, so a neighbour walking the same edge the other way sees
-    // the same pattern flipped: its teeth land in these notches.
-    for (let i = 1; i < TEETH - 1; i++) {
-      const out = (i % 2 ? 1 : -1) * direction * depth;
-      const sx = fromX + ux * step * i;
-      const sy = fromY + uy * step * i;
-      const ex = sx + ux * step;
-      const ey = sy + uy * step;
-      shape.lineTo(sx, sy);
-      shape.lineTo(sx + nx * out + ux * bevel, sy + ny * out + uy * bevel);
-      shape.lineTo(ex + nx * out - ux * bevel, ey + ny * out - uy * bevel);
-      shape.lineTo(ex, ey);
-    }
-    shape.lineTo(toX, toY);
-  }
-  return shape;
-}
-
 function foamFloor(scene: THREE.Object3D) {
   // Real mats never match perfectly: each one gets its own slight shade,
   // carried as a vertex colour so the whole floor is still one draw call.
@@ -421,32 +370,25 @@ function foamFloor(scene: THREE.Object3D) {
     roughness: 0.9,
     metalness: 0,
     normalMap: foamNormalMap(),
-    normalScale: new THREE.Vector2(0.45, 0.45),
+    normalScale: new THREE.Vector2(0.3, 0.3),
     vertexColors: true,
   });
   const shade = seeded(19);
   const size = TILE * SCALE;
-  // Mats are cut a hair smaller than their grid cell so the seam between them
-  // reads as a dark line, the way it does on a real field.
-  const seam = 0.07;
-  const tab = size * 0.035;
+  // The thin seam left all the way round every mat, teeth included, so it
+  // reads as a dark line the way it does on a real field.
+  const seam = 0.035;
+  // Tabs about an inch deep on a 24-inch tile, as on the real ones.
+  const tooth = size * 0.042;
   const geometries: THREE.BufferGeometry[] = [];
-  // A tab on one mat has to be a notch on its neighbour, so the seam direction
-  // is decided once per seam and read from both sides.
-  const vertical = (column: number, row: number) =>
-    (column + row) % 2 === 0 ? 1 : -1;
-  const horizontal = (column: number, row: number) =>
-    (column + row) % 2 === 0 ? -1 : 1;
   for (let column = 0; column < TILES; column++)
     for (let row = 0; row < TILES; row++) {
-      const edges = [
-        row === 0 ? 0 : -horizontal(column, row - 1),
-        column === TILES - 1 ? 0 : vertical(column, row),
-        row === TILES - 1 ? 0 : horizontal(column, row),
-        column === 0 ? 0 : -vertical(column - 1, row),
-      ];
+      const outline = insetOutline(
+        tileOutline(size, tooth, tileEdges(column, row, TILES)),
+        seam / 2,
+      );
       const geometry = new THREE.ExtrudeGeometry(
-        matShape(size - seam, tab, edges),
+        new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y))),
         {
           depth: 0.07,
           bevelEnabled: true,
@@ -872,7 +814,9 @@ export function createArenaScene(
     scene.fog.far *= roomy;
   }
   const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120 * roomy);
-  const pipeline = createRenderPipeline(renderer, scene, camera);
+  const pipeline = createRenderPipeline(renderer, scene, camera, () => {
+    stillFrameDrawn = false;
+  });
   // Where the camera is looking. Driving input is turned to match it, so
   // "up" on the stick always drives away from the camera.
   const cameraTarget = new THREE.Vector3();
@@ -936,14 +880,16 @@ export function createArenaScene(
   // of seams per colour, however many balls are out. Only a ball in flight
   // (into a robot or a GOAL) gets a mesh of its own.
   const parts = getBallParts();
-  const makeField = (color: 'P' | 'G') => {
+  const makeField = (look: BallLook) => {
     const capacity = Math.max(
       1,
-      world.pieces.filter((piece) => piece.color === color).length,
+      world.pieces.filter(
+        (piece) => lookOf(piece.color, piece.alliance) === look,
+      ).length,
     );
     const body = new THREE.InstancedMesh(
       parts.sphere,
-      parts.body[color],
+      parts.body[look],
       capacity,
     );
     body.customDepthMaterial = parts.shadow;
@@ -951,7 +897,7 @@ export function createArenaScene(
     body.receiveShadow = true;
     const seams = new THREE.InstancedMesh(
       parts.seam,
-      parts.seamColor[color],
+      parts.seamColor[look],
       capacity,
     );
     // The balls move every frame, so the precomputed bounds would be stale.
@@ -959,7 +905,11 @@ export function createArenaScene(
     scene.add(body, seams);
     return { body, seams };
   };
-  const fieldBalls = { P: makeField('P'), G: makeField('G') };
+  const fieldBalls = {
+    B: makeField('B'),
+    R: makeField('R'),
+    G: makeField('G'),
+  };
   // Each ball's accumulated roll, and whether it was on the mats last frame.
   const rolls = new Map<number, THREE.Euler>();
   const onMats = new Map<number, boolean>();
@@ -1119,7 +1069,10 @@ export function createArenaScene(
         disposeObject(cargo[index]);
         cargo[index].clear();
         actor.carried.forEach((color, i) => {
-          const ball = artifact(color, 0.9);
+          const ball = artifact(
+            lookOf(color, index === 0 ? 'blue' : 'red'),
+            0.9,
+          );
           ball.userData.arrival = i >= previousCarried[index].length ? 0.42 : 0;
           place(
             cargo[index],
@@ -1146,7 +1099,7 @@ export function createArenaScene(
           Math.max(1, previousCarried[index].length - actor.carried.length),
         );
         colors.forEach((color, i) => {
-          const mesh = artifact(color);
+          const mesh = artifact(lookOf(color, index === 0 ? 'blue' : 'red'));
           scene.add(mesh);
           flights.push({
             mesh,
@@ -1186,9 +1139,9 @@ export function createArenaScene(
         dt,
       );
     });
-    const drawn = { P: 0, G: 0 };
+    const drawn = { B: 0, R: 0, G: 0 };
     state.pieces.forEach((piece) => {
-      const key = piece.color === 'P' ? 'P' : 'G';
+      const key = lookOf(piece.color, piece.alliance);
       const roll = rolls.get(piece.id)!;
       if (piece.active) {
         // A tipped GOAL puts ARTIFACTS back on the mats: they simply join the
@@ -1210,7 +1163,7 @@ export function createArenaScene(
         );
         const radius =
           piece.color === 'P'
-            ? ARTIFACT_RADIUS * PURPLE_SCALE
+            ? ARTIFACT_RADIUS * NECTAR_SCALE
             : ARTIFACT_RADIUS;
         ballPose.compose(
           ballSpot,
@@ -1224,7 +1177,7 @@ export function createArenaScene(
         // Just picked up: a copy flies from the mats into the robot.
         onMats.set(piece.id, false);
         const collectorIndex = piece.collector === 'bot' ? 1 : 0;
-        const pickup = artifact(piece.color);
+        const pickup = artifact(lookOf(piece.color, piece.alliance));
         scene.add(pickup);
         flights.push({
           mesh: pickup,
@@ -1239,7 +1192,7 @@ export function createArenaScene(
         });
       }
     });
-    for (const key of ['P', 'G'] as const) {
+    for (const key of ['B', 'R', 'G'] as const) {
       const { body, seams } = fieldBalls[key];
       body.count = seams.count = drawn[key];
       body.instanceMatrix.needsUpdate = true;

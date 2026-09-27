@@ -61,29 +61,49 @@ export function inZone(point: { x: number; y: number }, zone: Zone) {
 export const BLUE_BASE = zoneCenter(BLUE_BASE_ZONE);
 export const RED_BASE = zoneCenter(RED_BASE_ZONE);
 
-// ARTIFACT starting positions, spread over the mats and clear of the goals,
-// the bases, and the center structure.
-export const pieceLayout: [number, number, 'P' | 'G'][] = [
-  [375, 158, 'P'],
-  [608, 132, 'G'],
-  [840, 158, 'P'],
-  [1050, 375, 'G'],
-  [165, 375, 'P'],
-  [375, 353, 'G'],
-  [608, 348, 'P'],
-  [840, 353, 'G'],
-  [158, 173, 'P'],
-  [1058, 173, 'G'],
-  [143, 705, 'P'],
-  [1073, 705, 'G'],
-  [450, 705, 'P'],
-  [608, 443, 'P'],
-  [375, 818, 'P'],
-  [608, 840, 'G'],
-  [840, 818, 'P'],
-  [180, 840, 'G'],
-  [1035, 840, 'G'],
-  [300, 960, 'G'],
-  [608, 1050, 'P'],
-  [915, 960, 'G'],
+export type Alliance = 'blue' | 'red';
+
+// Starting positions, as in BIOBUZZ: big NECTAR ('P') in alliance colours,
+// which only that alliance may pick up, and small yellow POLLEN ('G') that
+// anyone may. Every blue NECTAR has a red twin mirrored across the field, and
+// the POLLEN is mirrored too, so neither alliance starts with an advantage.
+// All of it is clear of the goals, the bases, and the center structure.
+const blueNectar: [number, number][] = [
+  [375, 158],
+  [160, 375],
+  [300, 560],
+  [143, 705],
+  [450, 818],
+  [330, 1020],
+];
+const sidePollen: [number, number][] = [
+  [260, 290],
+  [470, 300],
+  [110, 560],
+  [220, 880],
+  [500, 960],
+];
+const centerPollen: [number, number][] = [
+  [FIELD_CENTER, 140],
+  [FIELD_CENTER, 440],
+  [FIELD_CENTER, 1060],
+];
+const mirror = ([x, y]: [number, number]): [number, number] => [
+  FIELD_SIZE - x,
+  y,
+];
+
+export const pieceLayout: [number, number, 'P' | 'G', Alliance?][] = [
+  ...blueNectar.map(([x, y]): [number, number, 'P', Alliance] => [
+    x,
+    y,
+    'P',
+    'blue',
+  ]),
+  ...blueNectar
+    .map(mirror)
+    .map(([x, y]): [number, number, 'P', Alliance] => [x, y, 'P', 'red']),
+  ...[...sidePollen, ...sidePollen.map(mirror), ...centerPollen].map(
+    ([x, y]): [number, number, 'G'] => [x, y, 'G'],
+  ),
 ];

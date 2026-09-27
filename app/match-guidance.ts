@@ -1,10 +1,10 @@
 // Explicit extension so `node --test` can load this module directly.
-import { BLUE_BASE, BLUE_GOAL } from './field.ts';
+import { BLUE_BASE, BLUE_GOAL, type Alliance } from './field.ts';
 import type { World } from './game-arena';
 
 type GuidanceWorld = Pick<World, 'player' | 'pieces' | 'time'>;
 
-// Slots in each storage module. A yellow fills one; a big purple fills two,
+// Slots in each storage module. POLLEN fills one; a big NECTAR fills two,
 // except in the Low Rider Hopper (see `artifactSpace`).
 export function carryCapacity(module: string) {
   if (module === 'stackpack') return 6;
@@ -92,8 +92,8 @@ export function collectProfile(module: string): CollectProfile {
       grab: 2,
       topSpeed: 1,
     };
-  // A sorter that only swallows the big purples. They are worth 1.5 each
-  // toward a tip, so it fills a GOAL fastest - as long as you ignore yellow.
+  // A sorter that only swallows the big NECTAR. It is worth 1.5 each toward
+  // a tip, so it fills a GOAL fastest - as long as you ignore POLLEN.
   if (module === 'sorter')
     return {
       radius: 86,
@@ -212,17 +212,18 @@ export function playerTarget(
   if (world.time <= 10)
     return { kind: 'base' as const, x: BLUE_BASE.x, y: BLUE_BASE.y };
 
+  // Only what this alliance may take: POLLEN, and blue NECTAR.
   const candidates = world.pieces
-    .filter((piece) => piece.active)
+    .filter((piece) => piece.active && mayCollect(piece, 'blue'))
     .sort(
       (a, b) =>
         Math.hypot(a.x - world.player.x, a.y - world.player.y) -
         Math.hypot(b.x - world.player.x, b.y - world.player.y),
     );
   const carried = world.player.carried;
-  // A big purple will not fit in the last free slot of most storage, and a
-  // sorting collector will not touch the wrong colour at all, so only count
-  // ARTIFACTS the robot could actually pick up.
+  // A big NECTAR will not fit in the last free slot of most storage, and a
+  // sorting collector will not touch POLLEN at all, so only count ARTIFACTS
+  // the robot could actually pick up.
   const reachable = candidates.filter(
     (piece) =>
       canCarry(carried, piece.color, selected.carry) &&
@@ -241,14 +242,24 @@ export function playerTarget(
 // everything inside spills back onto the mats.
 export const TIP_POINTS = 20;
 
-// The purple ARTIFACTS are the big ones. They tip a GOAL faster, but they eat
+// NECTAR ('P') are the big ARTIFACTS. They tip a GOAL faster, but they eat
 // two slots in most storage - only the Low Rider Hopper's open bin takes one
-// whole, which is what makes that module worth its small capacity.
-export const PURPLE_TIP_VALUE = 1.5;
+// whole, which is what makes that module worth its small capacity. POLLEN
+// ('G') are the small yellow ones.
+export const NECTAR_TIP_VALUE = 1.5;
 export const BIG_ARTIFACT_STORAGE = 'lowbin';
 
 export function tipValue(color: string) {
-  return color === 'P' ? PURPLE_TIP_VALUE : 1;
+  return color === 'P' ? NECTAR_TIP_VALUE : 1;
+}
+
+// As in BIOBUZZ, NECTAR comes in alliance colours and a robot may only pick
+// up its own alliance's; POLLEN is anyone's.
+export function mayCollect(
+  piece: { color: string; alliance?: Alliance },
+  alliance: Alliance,
+) {
+  return piece.color !== 'P' || piece.alliance === alliance;
 }
 
 export function fieldTipValue(pieces: { color: string }[]) {

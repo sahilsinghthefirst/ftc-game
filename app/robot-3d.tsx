@@ -78,7 +78,9 @@ export function Robot3DBay(props: Props) {
     mergeStaticMeshes(room, []);
     scene.add(room);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    const pipeline = createRenderPipeline(renderer, scene, camera);
+    const pipeline = createRenderPipeline(renderer, scene, camera, () =>
+      invalidateRef.current(),
+    );
     camera.position.set(10.5, 7.5, 12.5);
     cameraRef.current = camera;
     const controls = new OrbitControls(camera, canvas);
@@ -89,6 +91,11 @@ export function Robot3DBay(props: Props) {
     controls.maxDistance = 25;
     controls.minPolarAngle = 0.12;
     controls.maxPolarAngle = 1.45;
+    // Swing no further than a little past side-on: any further round and a
+    // zoomed-out camera ends up behind the pit's back wall. At the limit and
+    // full zoom it is still well in front of it.
+    controls.minAzimuthAngle = -1.75;
+    controls.maxAzimuthAngle = 1.75;
     controls.enablePan = false;
     controlsRef.current = controls;
     // The workshop only redraws when something on screen changes: the camera

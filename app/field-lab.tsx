@@ -33,6 +33,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GraphicsPicker } from './graphics-picker';
 import {
   Dialog,
   DialogContent,
@@ -43,11 +44,11 @@ import {
 } from '@/components/ui/dialog';
 import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
-import { PURPLE_TIP_VALUE, TIP_POINTS, GOAL_TIP_AT } from './match-guidance';
+import { NECTAR_TIP_VALUE, TIP_POINTS, GOAL_TIP_AT } from './match-guidance';
 import { Robot3DBay } from './robot-3d';
 
 const tipAt = GOAL_TIP_AT;
-const purpleValue = PURPLE_TIP_VALUE;
+const nectarValue = NECTAR_TIP_VALUE;
 const tipPoints = TIP_POINTS;
 
 const sceneFadeMs = 300;
@@ -227,11 +228,11 @@ const modules: Module[] = [
   {
     id: 'sorter',
     category: 'collect',
-    name: 'PurpleSort Funnel',
+    name: 'NectarSort Funnel',
     code: 'INT-04',
-    blurb: 'A funnel shaped to swallow only the big purple ARTIFACTS.',
+    blurb: 'A funnel shaped to swallow only your big blue NECTAR.',
     strength: 'Fills the GOAL fastest at 1.5 a time',
-    tradeoff: 'Drives straight past every yellow',
+    tradeoff: 'Drives straight past all POLLEN',
     traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
     power: 2,
@@ -242,8 +243,8 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Low Rider Hopper',
     code: 'STR-01',
-    blurb: 'An open bin that swallows a big purple whole.',
-    strength: 'Purples take one slot, not two',
+    blurb: 'An open bin that swallows a big NECTAR whole.',
+    strength: 'NECTAR takes one slot, not two',
     tradeoff: 'Only four slots',
     traits: { speed: 1, handling: 2, control: 1, collect: 0, score: 0 },
     weight: 2,
@@ -270,7 +271,7 @@ const modules: Module[] = [
     code: 'STR-04',
     blurb: 'The lightest way to carry four.',
     strength: 'Almost no weight at all',
-    tradeoff: 'Four slots, but purples take two each',
+    tradeoff: 'Four slots, but NECTAR takes two each',
     traits: { speed: 2, handling: 3, control: 0, collect: 0, score: 1 },
     weight: 1,
     power: 2,
@@ -640,12 +641,12 @@ function Briefing({
           <div className="tip-brief">
             <div>
               <p className="eyebrow">TIPPING THE GOAL</p>
-              <strong>PURPLE {purpleValue} · YELLOW 1</strong>
+              <strong>NECTAR {nectarValue} · POLLEN 1</strong>
             </div>
             <p>
               <b>{tipPoints}</b> points at {tipAt}
               <br />
-              <span>big purples fill two storage slots</span>
+              <span>only blue NECTAR is yours · it fills two slots</span>
             </p>
           </div>
         </section>
@@ -672,6 +673,7 @@ function Briefing({
               ))}
             </div>
           </div>
+          <GraphicsPicker />
           <div className="briefing-loadout">
             <p className="eyebrow">ATLAS LOADOUT</p>
             <div>
@@ -1435,7 +1437,7 @@ export function FieldLab() {
                   <strong>{item.label}</strong>
                   <small>
                     {picked.name.replace(
-                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|DualJaw|PurpleSort|Low Rider|StackPack|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Range|Auto|Pathfinder)\s?/i,
+                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|DualJaw|NectarSort|Low Rider|StackPack|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Range|Auto|Pathfinder)\s?/i,
                       '',
                     )}
                   </small>

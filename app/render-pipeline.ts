@@ -5,11 +5,11 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import {
-  FrameGovernor,
-  lowerQuality,
-  pickQuality,
-  type Quality,
-} from './quality';
+  graphicsQuality,
+  onGraphicsQuality,
+  recommendQuality,
+} from './graphics-setting';
+import { pickQuality, type Quality } from './quality';
 
 // Per-tier settings. Shadow softness costs nothing extra (the sampler takes
 // the same taps at any radius), so even the low tier gets soft shadows.
@@ -22,11 +22,14 @@ const TIERS: Record<
     shadows: boolean;
   }
 > = {
-  high: { pixelRatio: 1.5, shadowMap: 2048, shadowRadius: 4, shadows: true },
-  medium: { pixelRatio: 1.25, shadowMap: 2048, shadowRadius: 3, shadows: true },
-  low: { pixelRatio: 1, shadowMap: 1024, shadowRadius: 2, shadows: true },
+  ultra: { pixelRatio: 1.5, shadowMap: 2048, shadowRadius: 4, shadows: true },
+  high: { pixelRatio: 1.25, shadowMap: 2048, shadowRadius: 3, shadows: true },
+  medium: { pixelRatio: 1, shadowMap: 1024, shadowRadius: 2, shadows: true },
   // Drawn at 80% size and scaled up by the browser; no shadow pass at all.
-  minimal: { pixelRatio: 0.8, shadowMap: 512, shadowRadius: 1, shadows: false },
+  low: { pixelRatio: 0.8, shadowMap: 512, shadowRadius: 1, shadows: false },
+  // For the very weakest machines: 60% size, which roughly halves the pixels
+  // drawn again compared with low.
+  lowest: { pixelRatio: 0.6, shadowMap: 512, shadowRadius: 1, shadows: false },
 };
 
 // The graphics chip's name, where the browser is willing to share it.
@@ -45,7 +48,6 @@ function gpuName(renderer: THREE.WebGLRenderer) {
 function deviceHints(renderer: THREE.WebGLRenderer) {
   const nav = navigator as Navigator & { deviceMemory?: number };
   return {
-    requested: new URLSearchParams(window.location.search).get('quality'),
     gpu: gpuName(renderer),
     coarsePointer: window.matchMedia('(pointer: coarse)').matches,
     cores: nav.hardwareConcurrency,
@@ -55,21 +57,22 @@ function deviceHints(renderer: THREE.WebGLRenderer) {
 
 export type RenderPipeline = ReturnType<typeof createRenderPipeline>;
 
-// Draws a scene through the post-processing chain its quality tier allows,
-// and quietly drops to a cheaper tier if frames start running slow.
+// Draws a scene through the post-processing chain its quality tier allows.
+// The tier is the player's graphics setting; until they choose one it is what
+// a check of this computer's specs recommends. `onChange` asks the view for a
+// fresh frame when the setting changes (views that only draw on change would
+// otherwise keep showing the old tier).
 export function createRenderPipeline(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
+  onChange: () => void = () => {},
 ) {
-  let quality = pickQuality(deviceHints(renderer));
+  recommendQuality(pickQuality(deviceHints(renderer)));
+  let quality = graphicsQuality();
   let width = 1;
   let height = 1;
   let composer: EffectComposer | null = null;
-  const governor = new FrameGovernor();
-  // Frames are timed here, from one draw to the next, so callers' own
-  // (capped) animation steps never hide a slow GPU or fake one.
-  let lastDraw = 0;
 
   const applyShadows = () => {
     const tier = TIERS[quality];
@@ -98,7 +101,8 @@ export function createRenderPipeline(
     renderer.setSize(width, height, false);
     applyShadows();
     document.documentElement.dataset.renderQuality = quality;
-    if (quality === 'low' || quality === 'minimal') return;
+    // Post-processing only from high up.
+    if (quality !== 'high' && quality !== 'ultra') return;
 
     // Half-float so bright lights keep their energy for the glow pass, and
     // multisampled so edges stay clean without a separate AA pass.
@@ -111,7 +115,7 @@ export function createRenderPipeline(
     composer.setPixelRatio(pixelRatio);
     composer.setSize(width, height);
     composer.addPass(new RenderPass(scene, camera));
-    if (quality === 'high') {
+    if (quality === 'ultra') {
       // Contact shading where parts meet and where robots and balls sit on
       // the mats.
       // Soft occlusion needs no fine detail, so it runs at half resolution
@@ -145,6 +149,14 @@ export function createRenderPipeline(
 
   build();
 
+  const stopListening = onGraphicsQuality(() => {
+    const next = graphicsQuality();
+    if (next === quality) return;
+    quality = next;
+    build();
+    onChange();
+  });
+
   return {
     get quality() {
       return quality;
@@ -156,17 +168,11 @@ export function createRenderPipeline(
       composer?.setSize(width, height);
     },
     render() {
-      const now = performance.now();
-      const seconds = lastDraw ? (now - lastDraw) / 1000 : 0;
-      lastDraw = now;
-      if (quality !== 'minimal' && governor.sample(seconds)) {
-        quality = lowerQuality(quality);
-        build();
-      }
-      if (composer) composer.render(seconds);
+      if (composer) composer.render();
       else renderer.render(scene, camera);
     },
     dispose() {
+      stopListening();
       composer?.dispose();
       composer = null;
     },
