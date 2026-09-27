@@ -275,8 +275,8 @@ export function workshopRoom(scene: THREE.Object3D) {
     place(scene, solid(0.06, 0.04, 9.4, 0xe2ae35), x, 0, 0);
   // Wall signs, sized to read from the workbench camera. Stacked above the
   // pegboard so none of them overlap it.
-  // Centred a little left of the robot, where the workbench camera looks.
-  const signX = -4.5;
+  // Centred on the back wall.
+  const signX = 0;
   place(scene, label('FIELD / LAB', 8.5, 1.6), signX, 6.1, -10.8);
   place(
     scene,
