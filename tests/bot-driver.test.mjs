@@ -84,6 +84,14 @@ test('Scout-7 still drives straight into its own GOAL to score', () => {
   const mind = createBotMind();
   for (let t = 0; t < 6; t += STEP) {
     const heading = botHeading(bot, RED_GOAL, mind, STEP);
+    // Arrived: coast, the way the match loop does.
+    if (heading.x === 0 && heading.y === 0) {
+      bot.vx *= 0.7;
+      bot.vy *= 0.7;
+      moveBody(bot, STEP);
+      resolveObstacle(bot);
+      continue;
+    }
     const angle = Math.atan2(heading.y, heading.x);
     bot.vx += clamp(Math.cos(angle) * 205 - bot.vx, -660 * STEP, 660 * STEP);
     bot.vy += clamp(Math.sin(angle) * 205 - bot.vy, -660 * STEP, 660 * STEP);
@@ -95,4 +103,57 @@ test('Scout-7 still drives straight into its own GOAL to score', () => {
     gap < 95,
     `ended ${gap.toFixed(0)} from the GOAL, too far to score`,
   );
+});
+
+test('Scout-7 docks at its GOAL from anywhere on the mats and stays there', () => {
+  // With the GOAL beside the center structure it can be approached from every
+  // side, and reaching it must not read as being stuck and back the bot off.
+  const far = FIELD_SIZE - 50;
+  const mid = FIELD_SIZE / 2;
+  const starts = [
+    { x: mid, y: far },
+    { x: mid, y: 100 },
+    { x: 150, y: 150 },
+    { x: far, y: far },
+    { x: far, y: mid },
+  ];
+  for (const start of starts) {
+    const bot = { x: start.x, y: start.y, vx: 0, vy: 0, angle: 0 };
+    const mind = createBotMind();
+    let docked = 0;
+    for (let t = 0; t < 10; t += STEP) {
+      const heading = botHeading(bot, RED_GOAL, mind, STEP);
+      if (heading.x === 0 && heading.y === 0) {
+        bot.vx *= 0.7;
+        bot.vy *= 0.7;
+      } else {
+        const angle = Math.atan2(heading.y, heading.x);
+        bot.vx += clamp(
+          Math.cos(angle) * 205 - bot.vx,
+          -660 * STEP,
+          660 * STEP,
+        );
+        bot.vy += clamp(
+          Math.sin(angle) * 205 - bot.vy,
+          -660 * STEP,
+          660 * STEP,
+        );
+      }
+      moveBody(bot, STEP);
+      resolveObstacle(bot);
+      if (Math.hypot(RED_GOAL.x - bot.x, RED_GOAL.y - bot.y) < 95)
+        docked += STEP;
+    }
+    // Across the field and into scoring range within a few seconds, and still
+    // there at the end.
+    const gap = Math.hypot(RED_GOAL.x - bot.x, RED_GOAL.y - bot.y);
+    assert.ok(
+      gap < 95,
+      `from ${start.x},${start.y} ended ${gap.toFixed(0)} out`,
+    );
+    assert.ok(
+      docked > 4,
+      `from ${start.x},${start.y} docked for ${docked.toFixed(1)}s`,
+    );
+  }
 });

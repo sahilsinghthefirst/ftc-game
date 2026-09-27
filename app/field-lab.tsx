@@ -23,7 +23,6 @@ import {
   MoveUp,
   PackageOpen,
   Play,
-  PlayCircle,
   RotateCcw,
   Scale,
   ScanLine,
@@ -31,6 +30,7 @@ import {
   Target,
   Trophy,
   Wrench,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -86,7 +86,6 @@ const buildInfo: Record<
     mount: string;
     hardware: string;
     lesson: string;
-    slotLabels: [string, string, string];
   }
 > = {
   drive: {
@@ -95,7 +94,6 @@ const buildInfo: Record<
     hardware: '4 motor plates · 8 shaft supports · M4 hardware',
     lesson:
       'Each wheel shaft is supported near both ends so it stays straight.',
-    slotLabels: ['Compact', 'Standard', 'Long'],
   },
   collect: {
     plainName: 'collector',
@@ -103,7 +101,6 @@ const buildInfo: Record<
     hardware: '2 angle brackets · 4 bolts · guarded motor wire',
     lesson:
       'The intake sits low and forward while its cable stays clear of the rollers.',
-    slotLabels: ['Low', 'Middle', 'Raised'],
   },
   carry: {
     plainName: 'storage',
@@ -111,7 +108,6 @@ const buildInfo: Record<
     hardware: '2 deck brackets · 4 bolts · clear polycarbonate shield',
     lesson:
       'Storage stays inside the frame so game pieces cannot fall into the electronics.',
-    slotLabels: ['Forward', 'Center', 'Rear'],
   },
   reach: {
     plainName: 'lift',
@@ -119,7 +115,6 @@ const buildInfo: Record<
     hardware: '2 reinforced brackets · nested rails · motor service loop',
     lesson:
       'Tall mechanisms get braced on two sides and keep a loose loop of wire for motion.',
-    slotLabels: ['Inboard', 'Center', 'Outboard'],
   },
   score: {
     plainName: 'scoring tool',
@@ -127,7 +122,6 @@ const buildInfo: Record<
     hardware: '4-bolt pattern · servo link · removable end plate',
     lesson:
       'A patterned end plate lets teams swap scoring tools between tests.',
-    slotLabels: ['Left', 'Center', 'Right'],
   },
   assist: {
     plainName: 'sensor',
@@ -135,7 +129,6 @@ const buildInfo: Record<
     hardware: '2-bolt bracket · signal cable · strain relief clip',
     lesson:
       'Sensors need a clear view, but they also need protection from robot contact.',
-    slotLabels: ['Front', 'Center', 'Rear'],
   },
 };
 
@@ -173,8 +166,8 @@ const modules: Module[] = [
     code: 'DRV-03',
     blurb: 'The fastest base on the mats.',
     strength: 'Huge top speed',
-    tradeoff: 'Skates straight past the GOAL',
-    traits: { speed: 6, handling: -3, control: 0, collect: 0, score: 0 },
+    tradeoff: 'Skids a long way past the GOAL',
+    traits: { speed: 6, handling: -6, control: 0, collect: 0, score: 0 },
     weight: 1,
     power: 3,
     space: 2,
@@ -184,10 +177,10 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Anchor Traction',
     code: 'DRV-04',
-    blurb: 'Grips hard and stops on a dime.',
-    strength: 'Starts and stops instantly',
+    blurb: 'Grips hard, stops on a dime and spins in place.',
+    strength: 'Stops and turns instantly',
     tradeoff: 'Slowest base here',
-    traits: { speed: -1, handling: 5, control: 3, collect: 0, score: 0 },
+    traits: { speed: 0, handling: 5, control: 3, collect: 0, score: 0 },
     weight: 3,
     power: 2,
     space: 2,
@@ -213,8 +206,8 @@ const modules: Module[] = [
     blurb: 'Heavy twin rollers that inhale an ARTIFACT on contact.',
     strength: 'Grabs one almost instantly',
     tradeoff: 'Heavy, and slows the whole robot',
-    traits: { speed: -3, handling: -1, control: 0, collect: 5, score: 0 },
-    weight: 5,
+    traits: { speed: -4, handling: -1, control: 0, collect: 5, score: 0 },
+    weight: 6,
     power: 5,
     space: 3,
   },
@@ -225,8 +218,8 @@ const modules: Module[] = [
     code: 'INT-03',
     blurb: 'Two jaws that close on a pair of ARTIFACTS at once.',
     strength: 'Takes two in one grab',
-    tradeoff: 'Slow, and only when they lie together',
-    traits: { speed: -1, handling: -1, control: 1, collect: 4, score: 0 },
+    tradeoff: 'Very slow clamp, wasted on a lone one',
+    traits: { speed: -1, handling: -1, control: 1, collect: 2, score: 0 },
     weight: 4,
     power: 4,
     space: 3,
@@ -262,7 +255,7 @@ const modules: Module[] = [
     category: 'carry',
     name: 'StackPack Magazine',
     code: 'STR-02',
-    blurb: 'Seven slots stacked high over the deck.',
+    blurb: 'Six slots stacked high over the deck.',
     strength: 'Carries the most per trip',
     tradeoff: 'Tall, heavy and sluggish',
     traits: { speed: -2, handling: -3, control: -2, collect: 1, score: 0 },
@@ -271,54 +264,28 @@ const modules: Module[] = [
     space: 4,
   },
   {
-    id: 'beltbridge',
-    category: 'carry',
-    name: 'BeltBridge',
-    code: 'STR-03',
-    blurb: 'Feeds ARTIFACTS straight on to the scorer.',
-    strength: 'Loads the GOAL without pausing',
-    tradeoff: 'Always drawing power',
-    traits: { speed: 0, handling: 0, control: 0, collect: 1, score: 2 },
-    weight: 2,
-    power: 5,
-    space: 3,
-  },
-  {
     id: 'pocket',
     category: 'carry',
     name: 'Pocket Indexer',
     code: 'STR-04',
-    blurb: 'The lightest way to carry two.',
+    blurb: 'The lightest way to carry four.',
     strength: 'Almost no weight at all',
-    tradeoff: 'Two slots, so one purple fills it',
+    tradeoff: 'Four slots, but purples take two each',
     traits: { speed: 2, handling: 3, control: 0, collect: 0, score: 1 },
     weight: 1,
     power: 2,
     space: 2,
   },
   {
-    id: 'cascade',
-    category: 'reach',
-    name: 'Cascade Slides',
-    code: 'RCH-01',
-    blurb: 'Loads the GOAL from well back in the field.',
-    strength: 'By far the longest reach',
-    tradeoff: 'Heavy and top-sway at full height',
-    traits: { speed: 0, handling: -3, control: -2, collect: 0, score: 3 },
-    weight: 5,
-    power: 4,
-    space: 3,
-  },
-  {
     id: 'swingarm',
     category: 'reach',
     name: 'Arc Pivot Arm',
     code: 'RCH-02',
-    blurb: 'A simple arm that swings up to the rim.',
-    strength: 'Light and never jams',
+    blurb: 'A light arm that swings up to the rim.',
+    strength: 'Lightest lift, so the fastest robot',
     tradeoff: 'Must drive right up to the GOAL',
-    traits: { speed: 1, handling: -1, control: 0, collect: 0, score: 1 },
-    weight: 3,
+    traits: { speed: 3, handling: 1, control: 0, collect: 0, score: 0 },
+    weight: 2,
     power: 3,
     space: 4,
   },
@@ -328,8 +295,8 @@ const modules: Module[] = [
     name: 'Compact Elevator',
     code: 'RCH-03',
     blurb: 'Lifts straight up, easy to line up.',
-    strength: 'Steady and predictable',
-    tradeoff: 'Middling reach',
+    strength: 'Fair reach with no speed cost',
+    tradeoff: 'Has to get fairly close',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 3,
     power: 3,
@@ -341,12 +308,25 @@ const modules: Module[] = [
     name: 'Orbit Turret',
     code: 'RCH-04',
     blurb: 'Swings the scorer out over the GOAL.',
-    strength: 'Reaches from well out',
-    tradeoff: 'Eats space and weight',
-    traits: { speed: 0, handling: -2, control: 1, collect: 0, score: 2 },
+    strength: 'Loads from well out',
+    tradeoff: 'Heavy turret slows the robot',
+    traits: { speed: -2, handling: -2, control: 1, collect: 0, score: 2 },
     weight: 4,
     power: 3,
     space: 5,
+  },
+  {
+    id: 'cascade',
+    category: 'reach',
+    name: 'Cascade Slides',
+    code: 'RCH-01',
+    blurb: 'Loads the GOAL from well back in the field.',
+    strength: 'By far the longest reach',
+    tradeoff: 'Tall and heavy: the slowest robot',
+    traits: { speed: -4, handling: -3, control: -2, collect: 0, score: 3 },
+    weight: 5,
+    power: 4,
+    space: 3,
   },
   {
     id: 'burst',
@@ -399,19 +379,6 @@ const modules: Module[] = [
     weight: 3,
     power: 6,
     space: 3,
-  },
-  {
-    id: 'coloreye',
-    category: 'assist',
-    name: 'Color Eye',
-    code: 'SNS-01',
-    blurb: 'Keeps collecting until your storage is full.',
-    strength: 'Fills up before every trip to the GOAL',
-    tradeoff: 'No help driving',
-    traits: { speed: 0, handling: 0, control: 0, collect: 3, score: 0 },
-    weight: 1,
-    power: 1,
-    space: 1,
   },
   {
     id: 'range',
@@ -481,7 +448,7 @@ const blueprints: {
     loadout: {
       drive: 'orbit',
       collect: 'twinflex',
-      carry: 'beltbridge',
+      carry: 'pocket',
       reach: 'swingarm',
       score: 'burst',
       assist: 'pathfinder',
@@ -510,7 +477,7 @@ const blueprints: {
       carry: 'stackpack',
       reach: 'cascade',
       score: 'tiptray',
-      assist: 'coloreye',
+      assist: 'pathfinder',
     },
   },
 ];
@@ -558,10 +525,10 @@ function HowItWorks() {
           <div>
             <span>02</span>
             <div>
-              <strong>Run a bench test</strong>
+              <strong>Weigh up the trade-offs</strong>
               <p>
-                Watch the collector, slides, and scoring tool move before the
-                match.
+                Every part has a strength and a cost. Watch the trait bars
+                change as you swap one in.
               </p>
             </div>
           </div>
@@ -873,18 +840,18 @@ export function FieldLab() {
   const [dragging, setDragging] = useState<Module | null>(null);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [dropHot, setDropHot] = useState(false);
+  // The part most recently let go of somewhere other than the robot. `nonce`
+  // changes on every miss so the warning animations replay each time.
+  const [rejected, setRejected] = useState<{
+    id: string;
+    name: string;
+    nonce: number;
+  } | null>(null);
+  const rejectTimer = useRef<number | null>(null);
+  const rejectCount = useRef(0);
   const [snappingCategory, setSnappingCategory] = useState<Category | null>(
     null,
   );
-  const [mountSlots, setMountSlots] = useState<Record<Category, number>>({
-    drive: 1,
-    collect: 1,
-    carry: 1,
-    reach: 1,
-    score: 1,
-    assist: 0,
-  });
-  const [mechanismRunning, setMechanismRunning] = useState(false);
   const [phase, setPhase] = useState<
     'workshop' | 'briefing' | 'match' | 'results'
   >('workshop');
@@ -913,9 +880,30 @@ export function FieldLab() {
   useEffect(
     () => () => {
       fadeTimers.current.forEach((id) => window.clearTimeout(id));
+      if (rejectTimer.current) window.clearTimeout(rejectTimer.current);
     },
     [],
   );
+
+  // A part let go of anywhere but the robot goes straight back to the tray.
+  // Make that impossible to miss: the tile shakes and gets stamped, and the
+  // robot itself flags that nothing was fitted.
+  const flagNotInstalled = (module: Module) => {
+    if (rejectTimer.current) window.clearTimeout(rejectTimer.current);
+    rejectCount.current += 1;
+    setRejected({
+      id: module.id,
+      name: module.name,
+      nonce: rejectCount.current,
+    });
+    rejectTimer.current = window.setTimeout(() => setRejected(null), 4000);
+  };
+
+  const clearRejected = () => {
+    if (rejectTimer.current) window.clearTimeout(rejectTimer.current);
+    rejectTimer.current = null;
+    setRejected(null);
+  };
 
   const changeScene = (swap: () => void) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -988,6 +976,7 @@ export function FieldLab() {
   );
 
   const chooseModule = (module: Module, mode: 'drag' | 'tap' = 'tap') => {
+    clearRejected();
     setSelected((current) => ({ ...current, [module.category]: module.id }));
     setBlueprint('custom');
     setCategory(module.category);
@@ -1024,6 +1013,7 @@ export function FieldLab() {
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    clearRejected();
     setCategory(module.category);
     setDragging(module);
     setDragPosition({ x: event.clientX, y: event.clientY });
@@ -1053,15 +1043,19 @@ export function FieldLab() {
     // Parts only go on by being carried to the mount. A tap that never leaves
     // the tray puts the part back rather than installing it.
     const overStage = pointIsOverStage(event.clientX, event.clientY);
-    if (overStage) chooseModule(current.module, 'drag');
-    else if (!current.moved)
+    const { module } = current;
+    const mount = buildInfo[module.category].mount.toLowerCase();
+    if (overStage) chooseModule(module, 'drag');
+    else if (selected[module.category] === module.id)
+      setSnapNote(`${module.name} is already on Atlas. Nothing changed.`);
+    else {
+      flagNotInstalled(module);
       setSnapNote(
-        `Pick ${current.module.name} up and drop it on the pulsing ${buildInfo[current.module.category].mount.toLowerCase()} to fit it.`,
+        current.moved
+          ? `${module.name} was dropped off the robot and NOT installed. Let go of it over the pulsing ${mount}.`
+          : `${module.name} was NOT installed - clicking only picks it up. Drag it onto the pulsing ${mount}.`,
       );
-    else
-      setSnapNote(
-        `${current.module.name} returned to the tray. Drop it on the pulsing mount to install it.`,
-      );
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
     dragRef.current = null;
@@ -1075,19 +1069,11 @@ export function FieldLab() {
     dragRef.current = null;
     setDragging(null);
     setDropHot(false);
-    setSnapNote('Part returned to the tray. Nothing changed.');
-  };
-
-  const runBenchTest = () => {
-    if (mechanismRunning) return;
-    setMechanismRunning(true);
+    if (selected[current.module.category] !== current.module.id)
+      flagNotInstalled(current.module);
     setSnapNote(
-      `Bench test: ${activeSelected.name} is moving while the wire route stays clear.`,
+      `${current.module.name} went back to the tray and was NOT installed.`,
     );
-    window.setTimeout(() => {
-      setMechanismRunning(false);
-      setSnapNote('Bench test passed. The mechanism is ready for the arena.');
-    }, 1500);
   };
 
   const loadBlueprint = (id: string) => {
@@ -1238,7 +1224,6 @@ export function FieldLab() {
     return withSceneFade(
       <GameArena
         selected={selected}
-        mountSlots={mountSlots}
         handling={traits.handling}
         difficulty={difficulty}
         onWorkshop={() => setPhase('workshop')}
@@ -1342,13 +1327,20 @@ export function FieldLab() {
               activeCategory={category}
               draggingCategory={dragging?.category ?? null}
               snappingCategory={snappingCategory}
-              mountSlots={mountSlots}
-              mechanismRunning={mechanismRunning}
               onSelectCategory={setCategory}
             />
             {dropHot && (
               <div className="stage-drop-label">
                 Release to bolt on {dragging?.name}
+              </div>
+            )}
+            {rejected && !dragging && (
+              <div className="stage-reject-label" key={rejected.nonce}>
+                <XCircle aria-hidden="true" />
+                <span>
+                  <strong>{rejected.name} not installed</strong>
+                  Drag it onto the robot to fit it
+                </span>
               </div>
             )}
           </div>
@@ -1366,65 +1358,6 @@ export function FieldLab() {
                 <small>{buildInfo[category].mount}</small>
               </div>
             </div>
-
-            <div className="mount-adjuster">
-              {category === 'drive' ? (
-                <>
-                  <span>Chassis geometry</span>
-                  <strong>Four-point, bearing-supported base</strong>
-                  <div className="fixed-rail" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <label htmlFor="mount-position">
-                    <span>Loosen · slide · tighten</span>
-                    <strong>Mount position</strong>
-                  </label>
-                  <input
-                    id="mount-position"
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="1"
-                    value={mountSlots[category]}
-                    onChange={(event) =>
-                      setMountSlots((current) => ({
-                        ...current,
-                        [category]: Number(event.target.value),
-                      }))
-                    }
-                    aria-valuetext={
-                      buildInfo[category].slotLabels[mountSlots[category]]
-                    }
-                  />
-                  <div className="rail-labels" aria-hidden="true">
-                    {buildInfo[category].slotLabels.map((label) => (
-                      <span key={label}>{label}</span>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            <button
-              className={`bench-test-button ${mechanismRunning ? 'is-running' : ''}`}
-              onClick={runBenchTest}
-              disabled={mechanismRunning}
-            >
-              <PlayCircle aria-hidden="true" />
-              <span>
-                <strong>
-                  {mechanismRunning ? 'Testing…' : 'Run bench test'}
-                </strong>
-                <small>Watch every mechanism move</small>
-              </span>
-            </button>
           </div>
 
           <div className="build-ticket">
@@ -1435,7 +1368,12 @@ export function FieldLab() {
                 {buildInfo[category].hardware}
               </span>
             </div>
-            <p aria-live="polite">{snapNote}</p>
+            <p
+              aria-live="polite"
+              className={rejected ? 'is-warning' : undefined}
+            >
+              {snapNote}
+            </p>
           </div>
 
           <div className="trait-strip" aria-label="Robot performance traits">
@@ -1486,7 +1424,7 @@ export function FieldLab() {
                   <strong>{item.label}</strong>
                   <small>
                     {picked.name.replace(
-                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|Low Rider|StackPack|BeltBridge|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Color|Range|Auto|Pathfinder)\s?/i,
+                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|DualJaw|PurpleSort|Low Rider|StackPack|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Range|Auto|Pathfinder)\s?/i,
                       '',
                     )}
                   </small>
@@ -1511,10 +1449,11 @@ export function FieldLab() {
           <div className="parts-tray">
             {currentModules.map((module) => {
               const isSelected = selected[module.category] === module.id;
+              const isRejected = rejected?.id === module.id;
               return (
                 <button
                   type="button"
-                  className={`part-tile ${isSelected ? 'is-installed' : ''}`}
+                  className={`part-tile ${isSelected ? 'is-installed' : ''} ${isRejected ? `is-rejected reject-${rejected.nonce % 2}` : ''}`}
                   key={module.id}
                   aria-pressed={isSelected}
                   aria-label={`${module.name}. ${isSelected ? 'Installed.' : ''} Drag onto the robot to fit it, or press Enter.`}
@@ -1540,6 +1479,11 @@ export function FieldLab() {
                     {isSelected && (
                       <span className="installed-sticker">
                         <CheckCircle2 /> On Atlas
+                      </span>
+                    )}
+                    {isRejected && (
+                      <span className="rejected-sticker" key={rejected.nonce}>
+                        Not installed
                       </span>
                     )}
                   </div>

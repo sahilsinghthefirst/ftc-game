@@ -7,18 +7,15 @@
 // without numbers drifting apart between modules.
 
 export const TILES = 6;
-export const TILE = 135;
+// The mats are scaled up half again from the robots' true proportions,
+// giving a bigger field to drive, spread out and race across.
+export const TILE = 202.5;
 export const FIELD_SIZE = TILES * TILE;
 export const FIELD_CENTER = FIELD_SIZE / 2;
 
 // How close a robot's center or a loose ARTIFACT can get to the perimeter wall.
 export const ROBOT_MARGIN = 43;
 export const BALL_MARGIN = 16;
-
-export const BLUE_GOAL = { x: 105, y: 115 };
-export const RED_GOAL = { x: FIELD_SIZE - 105, y: 115 };
-export const BLUE_BASE = { x: 115, y: FIELD_SIZE - 120 };
-export const RED_BASE = { x: FIELD_SIZE - 115, y: FIELD_SIZE - 120 };
 
 export const GOAL_RADIUS = 45;
 export const CENTER_STRUCTURE = {
@@ -27,29 +24,66 @@ export const CENTER_STRUCTURE = {
   radius: 76,
 };
 
+// The GOALS stand right up against the center structure, level with it: blue
+// on its left, red on its right. The small gap is where the 3D models meet -
+// far too narrow for a robot or an ARTIFACT to slip through.
+export const GOAL_OFFSET = CENTER_STRUCTURE.radius + GOAL_RADIUS + 4;
+export const BLUE_GOAL = { x: FIELD_CENTER - GOAL_OFFSET, y: FIELD_CENTER };
+export const RED_GOAL = { x: FIELD_CENTER + GOAL_OFFSET, y: FIELD_CENTER };
+// Each alliance's BASE is the whole mat in its bottom corner, flush with both
+// walls: blue bottom-left, red bottom-right. A robot is parked when its center
+// is on that mat.
+export type Zone = { left: number; top: number; right: number; bottom: number };
+export const BLUE_BASE_ZONE: Zone = {
+  left: 0,
+  top: FIELD_SIZE - TILE,
+  right: TILE,
+  bottom: FIELD_SIZE,
+};
+export const RED_BASE_ZONE: Zone = {
+  left: FIELD_SIZE - TILE,
+  top: FIELD_SIZE - TILE,
+  right: FIELD_SIZE,
+  bottom: FIELD_SIZE,
+};
+export function zoneCenter(zone: Zone) {
+  return { x: (zone.left + zone.right) / 2, y: (zone.top + zone.bottom) / 2 };
+}
+export function inZone(point: { x: number; y: number }, zone: Zone) {
+  return (
+    point.x >= zone.left &&
+    point.x <= zone.right &&
+    point.y >= zone.top &&
+    point.y <= zone.bottom
+  );
+}
+// Where robots head to park: the middle of their BASE mat.
+export const BLUE_BASE = zoneCenter(BLUE_BASE_ZONE);
+export const RED_BASE = zoneCenter(RED_BASE_ZONE);
+
 // ARTIFACT starting positions, spread over the mats and clear of the goals,
 // the bases, and the center structure.
 export const pieceLayout: [number, number, 'P' | 'G'][] = [
-  [250, 105, 'P'],
-  [405, 88, 'G'],
-  [560, 105, 'P'],
-  [700, 250, 'G'],
-  [110, 250, 'P'],
-  [250, 235, 'G'],
-  [405, 232, 'P'],
-  [560, 235, 'G'],
-  [180, 380, 'P'],
-  [630, 380, 'G'],
-  [95, 470, 'P'],
-  [715, 470, 'G'],
-  [300, 470, 'P'],
-  [405, 295, 'P'],
-  [250, 545, 'P'],
-  [405, 560, 'G'],
-  [560, 545, 'P'],
-  [120, 560, 'G'],
-  [690, 560, 'G'],
-  [200, 640, 'G'],
-  [405, 700, 'P'],
-  [610, 640, 'G'],
+  [375, 158, 'P'],
+  [608, 132, 'G'],
+  [840, 158, 'P'],
+  [1050, 375, 'G'],
+  [165, 375, 'P'],
+  [375, 353, 'G'],
+  [608, 348, 'P'],
+  [840, 353, 'G'],
+  [158, 173, 'P'],
+  [1058, 173, 'G'],
+  [143, 705, 'P'],
+  [1073, 705, 'G'],
+  [450, 705, 'P'],
+  [608, 443, 'P'],
+  [375, 818, 'P'],
+  [608, 840, 'G'],
+  [840, 818, 'P'],
+  [180, 840, 'G'],
+  [1035, 840, 'G'],
+  [300, 960, 'G'],
+  [608, 1050, 'P'],
+  [915, 960, 'G'],
 ];

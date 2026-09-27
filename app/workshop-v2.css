@@ -555,17 +555,14 @@
 .assembly-console {
   min-height: 106px;
   display: grid;
-  grid-template-columns: minmax(220px, 0.85fr) minmax(250px, 1.25fr) 190px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   border-bottom: 1px solid #c8c0b3;
   background: #f4f0e7;
 }
 
-.installed-part,
-.mount-adjuster,
-.bench-test-button {
+.installed-part {
   min-width: 0;
-  border-right: 1px solid #cac2b5;
 }
 
 .installed-part {
@@ -606,143 +603,6 @@
   margin-top: 4px;
   color: #727b7e;
   font-size: 10px;
-}
-
-.mount-adjuster {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 11px 18px;
-}
-
-.mount-adjuster label,
-.mount-adjuster > span,
-.mount-adjuster > strong {
-  display: block;
-}
-
-.mount-adjuster label span,
-.mount-adjuster > span {
-  color: #9c3b26;
-  font-family: var(--font-geist-mono);
-  font-size: 8px;
-  font-weight: 750;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.mount-adjuster label strong,
-.mount-adjuster > strong {
-  margin-top: 2px;
-  color: #344248;
-  font-size: 12px;
-}
-
-.mount-adjuster input[type='range'] {
-  width: 100%;
-  height: 18px;
-  margin: 7px 0 0;
-  appearance: none;
-  background: transparent;
-  cursor: ew-resize;
-}
-
-.mount-adjuster input[type='range']::-webkit-slider-runnable-track {
-  height: 8px;
-  border: 1px solid #758187;
-  background:
-    radial-gradient(circle, #606c72 0 2px, transparent 2.5px) 0 50% / 16.66%
-      100%,
-    #ccd1d1;
-}
-
-.mount-adjuster input[type='range']::-webkit-slider-thumb {
-  width: 24px;
-  height: 24px;
-  appearance: none;
-  margin-top: -9px;
-  border: 3px solid #f5efe2;
-  border-radius: 50%;
-  background: #d94c2a;
-  box-shadow: 0 0 0 2px #89331f;
-}
-
-.rail-labels {
-  display: flex;
-  justify-content: space-between;
-  color: #737c7f;
-  font-size: 8px;
-}
-
-.fixed-rail {
-  height: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  margin-top: 10px;
-  border: 1px solid #79858a;
-  background: #cfd4d4;
-}
-
-.fixed-rail i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #617078;
-}
-
-.bench-test-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 12px;
-  border: 0;
-  background: #253a43;
-  color: #f8f4ea;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s ease;
-}
-
-.bench-test-button:hover {
-  background: #314b56;
-}
-
-.bench-test-button:disabled {
-  cursor: wait;
-  opacity: 0.85;
-}
-
-.bench-test-button svg {
-  width: 27px;
-  height: 27px;
-  color: #efb52e;
-}
-
-.bench-test-button strong,
-.bench-test-button small {
-  display: block;
-}
-
-.bench-test-button strong {
-  font-size: 12px;
-}
-
-.bench-test-button small {
-  margin-top: 3px;
-  color: #b7c1c4;
-  font-size: 9px;
-}
-
-.bench-test-button.is-running svg {
-  animation: test-spin 0.7s linear infinite;
-}
-
-@keyframes test-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .build-ticket {
@@ -1188,7 +1048,7 @@
 }
 
 .part-tile-copy > div i::before {
-  content: 'â€“ ';
+  content: '\2013  ';
 }
 
 .pit-lesson {
@@ -1878,20 +1738,12 @@
     grid-template-columns: minmax(0, 1.35fr) minmax(400px, 0.75fr);
   }
 
-  .assembly-console {
-    grid-template-columns: minmax(190px, 0.8fr) minmax(210px, 1fr) 165px;
-  }
-
   .installed-part {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 
   .installed-part .part-illustration {
     width: 72px;
-  }
-
-  .bench-test-button small {
-    display: none;
   }
 }
 
@@ -1991,17 +1843,9 @@
     gap: 7px;
   }
 
-  .assembly-console {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .installed-part {
     grid-column: 1 / -1;
     border-bottom: 1px solid #cac2b5;
-  }
-
-  .bench-test-button {
-    border-right: 0;
   }
 
   .build-ticket {
@@ -2050,8 +1894,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .three-mount-reticle,
-  .bench-test-button.is-running svg {
+  .three-mount-reticle {
     animation: none;
   }
 

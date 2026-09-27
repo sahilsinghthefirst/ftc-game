@@ -122,7 +122,7 @@
 }
 .assembly-console {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding: 12px 16px;
   align-items: center;
@@ -146,43 +146,7 @@
   font-size: 15px;
   color: #1c3441;
 }
-.mount-adjuster {
-  min-width: 0;
-  padding: 0;
-  border: 0;
-}
-.mount-adjuster > span {
-  font-size: 12px;
-  color: #566c79;
-}
-.mount-adjuster > strong {
-  font-size: 14px;
-  color: #304955;
-}
-.rail-labels span {
-  font-size: 11px;
-  color: #536773;
-}
-.bench-test-button {
-  height: 52px;
-  width: auto;
-  min-width: 0;
-  padding: 9px 12px;
-  border: 1px solid #b7c8cf;
-  background: #e7eef1;
-  color: #254653;
-  box-shadow: none;
-  border-radius: 4px;
-}
-.bench-test-button svg {
-  width: 20px;
-}
-.bench-test-button strong {
-  font-size: 13px;
-}
-.bench-test-button small {
-  display: none;
-}
+
 .build-ticket {
   background: #edf2f4;
   border-bottom: 1px solid var(--pit-line);
@@ -537,7 +501,7 @@
   margin-left: auto;
 }
 .pit-lesson[open] summary::after {
-  content: 'âˆ’';
+  content: '\2212';
 }
 .pit-lesson summary svg {
   width: 15px;
@@ -1035,17 +999,8 @@
   }
   .assembly-console {
     gap: 10px;
-    grid-template-columns: 1fr 1fr;
   }
-  .bench-test-button {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
-  }
-  .mount-adjuster {
-    grid-column: 1 / -1;
-    padding-top: 6px;
-  }
+
   .scene-caption {
     top: 68px;
     font-size: 11px;
@@ -1540,5 +1495,151 @@
 @media (min-width: 601px) and (max-width: 820px) {
   .immersive-match .arena-camera-switch {
     top: 136px;
+  }
+}
+
+/* A part let go of anywhere but the robot is sent back to the tray. The tile
+   shakes and gets stamped, the robot flags the miss, and the pit note turns
+   red, so a stray click can never look like a successful install. Two
+   identical keyframe sets let the shake replay on every miss. */
+.part-tile.is-rejected {
+  border-color: #c83d2a;
+  box-shadow:
+    inset 3px 0 #c83d2a,
+    0 0 0 2px rgba(200, 61, 42, 0.25);
+  background: #fff5f2;
+}
+.part-tile.is-rejected.reject-0 {
+  animation: part-reject-a 0.45s ease;
+}
+.part-tile.is-rejected.reject-1 {
+  animation: part-reject-b 0.45s ease;
+}
+@keyframes part-reject-a {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+@keyframes part-reject-b {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+.rejected-sticker {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 2px;
+  background: #c83d2a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: reject-stamp 0.3s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes reject-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.6) rotate(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+.stage-reject-label {
+  position: absolute;
+  z-index: 21;
+  left: 50%;
+  bottom: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  border: 2px solid #8f2618;
+  border-radius: 4px;
+  background: #c83d2a;
+  color: #fff;
+  box-shadow: 4px 4px 0 rgba(87, 29, 20, 0.25);
+  font-size: 12px;
+  line-height: 1.3;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: stage-reject 4s ease forwards;
+}
+.stage-reject-label svg {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+}
+.stage-reject-label span {
+  display: grid;
+}
+.stage-reject-label strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+@keyframes stage-reject {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 12px) scale(0.92);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.04);
+  }
+  14%,
+  82% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+.build-ticket > p.is-warning {
+  color: #a3301f;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .part-tile.is-rejected.reject-0,
+  .part-tile.is-rejected.reject-1,
+  .rejected-sticker {
+    animation: none;
+  }
+  .stage-reject-label {
+    animation: stage-reject-fade 4s step-end forwards;
+  }
+}
+@keyframes stage-reject-fade {
+  to {
+    opacity: 0;
   }
 }

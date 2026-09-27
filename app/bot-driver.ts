@@ -152,7 +152,18 @@ export function botHeading(
   const dx = target.x - bot.x;
   const dy = target.y - bot.y;
   const range = Math.hypot(dx, dy);
-  if (range <= 7) {
+  // A target inside something solid - a GOAL - is reached as soon as the bot
+  // is up against it. Pressing on would only read as being stuck and send it
+  // reversing away from the GOAL it came to score in.
+  const home = BOT_OBSTACLES.find(
+    (obstacle) =>
+      Math.hypot(target.x - obstacle.x, target.y - obstacle.y) <=
+      obstacle.r + 4,
+  );
+  const docked =
+    home !== undefined &&
+    Math.hypot(bot.x - home.x, bot.y - home.y) <= home.r + 6;
+  if (range <= 7 || docked) {
     mind.stuck = 0;
     mind.dodge = 0;
     return { x: 0, y: 0 };

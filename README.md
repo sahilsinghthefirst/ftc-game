@@ -23,7 +23,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. Color Eye should keep guiding collection until full or the field is empty. ARTIFACTS score nothing on their own: purple ones count 1.5 toward the GOAL and green ones 1, so the GOAL tips at 10 for 20 points and rolls those ARTIFACTS back onto the mats, where they must be visible again. Purple ARTIFACTS fill two storage slots in every module except the Low Rider Hopper.
+Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. ARTIFACTS score nothing on their own: purple ones count 1.5 toward the GOAL and green ones 1, so the GOAL tips at 10 for 20 points and rolls those ARTIFACTS back onto the mats, where they must be visible again. Purple ARTIFACTS fill two storage slots in every module except the Low Rider Hopper.
 
 ## Code map
 

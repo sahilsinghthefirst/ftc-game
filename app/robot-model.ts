@@ -596,50 +596,40 @@ function addStorage(root: THREE.Group, id: string, slot: number) {
   const group = new THREE.Group();
   group.position.z = (slot - 1) * 0.28;
   group.add(bracket(-1.15, 1.1, 0.75), bracket(1.15, 1.1, 0.75, Math.PI));
-  if (id === 'beltbridge') {
-    const conveyor = box(2.35, 0.28, 0.85, 0x303a3f);
-    conveyor.position.set(0, 1.63, 0.62);
-    conveyor.rotation.x = -0.22;
-    group.add(conveyor);
-    for (let i = -4; i <= 4; i += 1) {
-      const cleat = box(0.08, 0.08, 0.91, palette.yellow);
-      cleat.position.set(i * 0.24, 1.79 + i * 0.012, 0.58);
-      group.add(cleat);
-    }
-  } else {
-    const tall = id === 'stackpack';
-    const height = tall ? 2.05 : id === 'pocket' ? 0.78 : 1.22;
-    const panelMaterial = material(0x4d8aa4, {
-      transparent: true,
-      opacity: 0.5,
-      roughness: 0.2,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    });
-    const back = new THREE.Mesh(
-      new THREE.BoxGeometry(2.35, height, 0.08),
-      panelMaterial,
-    );
-    back.position.set(0, 1.18 + height / 2, -0.05);
-    const left = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, height, 1.15),
-      panelMaterial,
-    );
-    left.position.set(-1.16, 1.18 + height / 2, 0.5);
-    const right = left.clone();
-    right.position.x = 1.16;
-    const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(2.35, 0.08, 1.15),
-      panelMaterial,
-    );
-    floor.position.set(0, 1.2, 0.5);
-    group.add(back, left, right, floor);
-    if (id === 'pocket') {
+  const tall = id === 'stackpack';
+  const height = tall ? 2.05 : id === 'pocket' ? 0.78 : 1.22;
+  const panelMaterial = material(0x4d8aa4, {
+    transparent: true,
+    opacity: 0.5,
+    roughness: 0.2,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const back = new THREE.Mesh(
+    new THREE.BoxGeometry(2.35, height, 0.08),
+    panelMaterial,
+  );
+  back.position.set(0, 1.18 + height / 2, -0.05);
+  const left = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, height, 1.15),
+    panelMaterial,
+  );
+  left.position.set(-1.16, 1.18 + height / 2, 0.5);
+  const right = left.clone();
+  right.position.x = 1.16;
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(2.35, 0.08, 1.15),
+    panelMaterial,
+  );
+  floor.position.set(0, 1.2, 0.5);
+  group.add(back, left, right, floor);
+  // The indexer is split into four bays, one per slot.
+  if (id === 'pocket')
+    for (const x of [-0.58, 0, 0.58]) {
       const divider = box(0.08, 0.66, 1.0, palette.aluminumDark);
-      divider.position.set(0, 1.55, 0.5);
+      divider.position.set(x, 1.55, 0.5);
       group.add(divider);
     }
-  }
   group.userData.category = 'carry';
   root.add(group);
   return group;
@@ -780,8 +770,7 @@ function addSensor(root: THREE.Group, id: string, slot: number) {
   group.add(stem);
   const body = box(0.78, 0.5, 0.42, palette.dark, { roughness: 0.68 });
   group.add(body);
-  const lensColor =
-    id === 'coloreye' ? 0x9b57ce : id === 'range' ? 0x3c99c4 : 0x62b3da;
+  const lensColor = id === 'range' ? 0x3c99c4 : 0x62b3da;
   for (const x of [-0.2, 0.2]) {
     const lens = cylinder(0.12, 0.06, lensColor, 20);
     lens.rotation.x = Math.PI / 2;
@@ -852,7 +841,9 @@ export function disposeObject(object: THREE.Object3D) {
   materialSet.forEach((item) => item.dispose());
 }
 
-export const defaultMountSlots: Record<AssemblyCategory, number> = {
+// Where each part sits on its mount rail. Every robot uses the standard
+// position: centered, with the sensor at the front.
+const MOUNT_SLOTS: Record<AssemblyCategory, number> = {
   drive: 1,
   collect: 1,
   carry: 1,
@@ -860,10 +851,8 @@ export const defaultMountSlots: Record<AssemblyCategory, number> = {
   score: 1,
   assist: 0,
 };
-export function createRobotModel(
-  selected: Record<string, string>,
-  slots = defaultMountSlots,
-) {
+export function createRobotModel(selected: Record<string, string>) {
+  const slots = MOUNT_SLOTS;
   const root = new THREE.Group();
   const moving: MovingParts = {
     wheels: [],

@@ -15,8 +15,6 @@ type AssemblyBayProps = {
   activeCategory: AssemblyCategory;
   draggingCategory: AssemblyCategory | null;
   snappingCategory: AssemblyCategory | null;
-  mountSlot: number;
-  mechanismRunning: boolean;
 };
 
 type PartIllustrationProps = {
@@ -318,40 +316,6 @@ function Intake({ id }: { id: string }) {
 }
 
 function Storage({ id }: { id: string }) {
-  if (id === 'beltbridge') {
-    return (
-      <g>
-        <path
-          d="M274 304L420 253L439 292L289 348Z"
-          fill="#2b3439"
-          stroke="#101719"
-          strokeWidth="3"
-        />
-        <path
-          d="M292 319L424 273"
-          stroke="#e9b82e"
-          strokeWidth="12"
-          strokeDasharray="7 8"
-        />
-        <circle
-          cx="293"
-          cy="319"
-          r="14"
-          fill="#d7dcdd"
-          stroke="#4b585f"
-          strokeWidth="3"
-        />
-        <circle
-          cx="423"
-          cy="274"
-          r="14"
-          fill="#d7dcdd"
-          stroke="#4b585f"
-          strokeWidth="3"
-        />
-      </g>
-    );
-  }
   if (id === 'pocket') {
     return (
       <g>
@@ -361,9 +325,13 @@ function Storage({ id }: { id: string }) {
           stroke="#172832"
           strokeWidth="3"
         />
-        <path d="M319 296V338M354 296V338" stroke="#bfd3dc" strokeWidth="5" />
-        <circle cx="334" cy="314" r="12" fill="#9c5ad1" />
-        <circle cx="370" cy="318" r="12" fill="#9bc53d" />
+        <path
+          d="M317 296V338M346 296V338M375 296V338"
+          stroke="#bfd3dc"
+          strokeWidth="5"
+        />
+        <circle cx="331" cy="316" r="11" fill="#9c5ad1" />
+        <circle cx="360" cy="318" r="11" fill="#9bc53d" />
       </g>
     );
   }
@@ -567,7 +535,6 @@ function Scorer({ id }: { id: string }) {
 }
 
 function Sensor({ id }: { id: string }) {
-  const isColor = id === 'coloreye';
   const isRange = id === 'range';
   return (
     <g className="sensor-head">
@@ -582,12 +549,7 @@ function Sensor({ id }: { id: string }) {
         stroke="#d4dadd"
         strokeWidth="3"
       />
-      {isColor ? (
-        <>
-          <circle cx="160" cy="281" r="8" fill="#9154ce" />
-          <circle cx="179" cy="281" r="8" fill="#98c53d" />
-        </>
-      ) : isRange ? (
+      {isRange ? (
         <>
           <circle cx="158" cy="281" r="8" fill="#59a6cc" />
           <circle cx="180" cy="281" r="8" fill="#59a6cc" />
@@ -697,26 +659,12 @@ export function PartIllustration({
       )}
       {category === 'carry' && (
         <g {...common}>
-          {id === 'beltbridge' ? (
-            <>
-              <path d="M26 56L88 26L99 45L36 68Z" fill="#39464c" />
-              <path
-                d="M36 58L91 34"
-                stroke="#e8b52d"
-                strokeWidth="7"
-                strokeDasharray="5 6"
-              />
-            </>
-          ) : (
-            <path
-              d={
-                id === 'stackpack'
-                  ? 'M34 17H86L82 68H38Z'
-                  : 'M29 32H91L83 68H37Z'
-              }
-              fill="#4f8097"
-            />
-          )}
+          <path
+            d={
+              id === 'stackpack' ? 'M34 17H86L82 68H38Z' : 'M29 32H91L83 68H37Z'
+            }
+            fill="#4f8097"
+          />
         </g>
       )}
       {category === 'reach' && (
@@ -766,17 +714,8 @@ export function PartIllustration({
       {category === 'assist' && (
         <g {...common}>
           <rect x="34" y="26" width="52" height="35" rx="6" fill="#2b373d" />
-          {id === 'coloreye' ? (
-            <>
-              <circle cx="51" cy="43" r="8" fill="#8f58c6" />
-              <circle cx="70" cy="43" r="8" fill="#9ac440" />
-            </>
-          ) : (
-            <>
-              <circle cx="50" cy="43" r="8" fill="#5ba9cf" />
-              <circle cx="71" cy="43" r="8" fill="#5ba9cf" />
-            </>
-          )}
+          <circle cx="50" cy="43" r="8" fill="#5ba9cf" />
+          <circle cx="71" cy="43" r="8" fill="#5ba9cf" />
           <path d="M60 61V70" />
         </g>
       )}
@@ -789,10 +728,7 @@ export function AssemblyBay({
   activeCategory,
   draggingCategory,
   snappingCategory,
-  mountSlot,
-  mechanismRunning,
 }: AssemblyBayProps) {
-  const horizontalOffset = (mountSlot - 1) * 22;
   return (
     <div
       className={`assembly-viewport ${draggingCategory ? 'is-dragging' : ''}`}
@@ -963,8 +899,7 @@ export function AssemblyBay({
         </g>
 
         <g
-          transform={`translate(${horizontalOffset * 0.35} 0)`}
-          className={`part-group collect-group ${mechanismRunning ? 'is-running' : ''} ${activeCategory === 'collect' ? 'is-active' : ''} ${snappingCategory === 'collect' ? 'is-snapping' : ''}`}
+          className={`part-group collect-group ${activeCategory === 'collect' ? 'is-active' : ''} ${snappingCategory === 'collect' ? 'is-snapping' : ''}`}
         >
           <path
             d="M148 350H177V397H148"
@@ -978,7 +913,6 @@ export function AssemblyBay({
         </g>
 
         <g
-          transform={`translate(${horizontalOffset * 0.55} 0)`}
           className={`part-group carry-group ${activeCategory === 'carry' ? 'is-active' : ''} ${snappingCategory === 'carry' ? 'is-snapping' : ''}`}
         >
           <path
@@ -993,8 +927,7 @@ export function AssemblyBay({
         </g>
 
         <g
-          transform={`translate(${horizontalOffset} 0)`}
-          className={`part-group reach-group ${mechanismRunning ? 'is-running' : ''} ${activeCategory === 'reach' ? 'is-active' : ''} ${snappingCategory === 'reach' ? 'is-snapping' : ''}`}
+          className={`part-group reach-group ${activeCategory === 'reach' ? 'is-active' : ''} ${snappingCategory === 'reach' ? 'is-snapping' : ''}`}
         >
           <path
             d="M421 322H458V356H421"
@@ -1008,14 +941,12 @@ export function AssemblyBay({
         </g>
 
         <g
-          transform={`translate(${horizontalOffset} 0)`}
-          className={`part-group score-group ${mechanismRunning ? 'is-running' : ''} ${activeCategory === 'score' ? 'is-active' : ''} ${snappingCategory === 'score' ? 'is-snapping' : ''}`}
+          className={`part-group score-group ${activeCategory === 'score' ? 'is-active' : ''} ${snappingCategory === 'score' ? 'is-snapping' : ''}`}
         >
           <Scorer id={selected.score} />
         </g>
 
         <g
-          transform={`translate(${horizontalOffset * 0.2} 0)`}
           className={`part-group assist-group ${activeCategory === 'assist' ? 'is-active' : ''} ${snappingCategory === 'assist' ? 'is-snapping' : ''}`}
         >
           <Sensor id={selected.assist} />

@@ -13,17 +13,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
-import type { AssemblyCategory } from './assembly-bay';
 import {
-  BALL_MARGIN,
   BLUE_BASE,
+  BLUE_BASE_ZONE,
   BLUE_GOAL,
   CENTER_STRUCTURE,
-  FIELD_CENTER,
-  FIELD_SIZE,
-  GOAL_RADIUS,
   RED_BASE,
+  RED_BASE_ZONE,
   RED_GOAL,
+  inZone,
   pieceLayout,
 } from './field';
 import {
@@ -32,9 +30,8 @@ import {
   moveBody,
   rollBalls,
   resolveObstacle,
-  rollSpeed,
+  spillPlan,
   BALL_RADIUS,
-  SPILL_DRAG,
 } from './robot-physics';
 import {
   canCarry,
@@ -45,11 +42,11 @@ import {
   GOAL_TIP_AT,
   TIP_POINTS,
   tipValue,
-  reloadFactor,
-  scoreReachBonus,
+  intakeTurnRate,
+  scoreReach,
   shoveResist,
   strafeFactor,
-  turnRate,
+  topSpeed,
   usedSpace,
   playerTarget,
 } from './match-guidance';
@@ -67,7 +64,6 @@ export type MatchResult = {
 
 type ArenaProps = {
   selected: Record<string, string>;
-  mountSlots: Record<AssemblyCategory, number>;
   handling: number;
   difficulty: Difficulty;
   onFinish: (result: MatchResult) => void;
@@ -92,6 +88,8 @@ type Piece = {
   px: number;
   py: number;
   spill?: boolean;
+  // Seconds before a freshly spilled ARTIFACT can be picked up.
+  grace?: number;
   // Queued spill: an ARTIFACT waiting its turn to roll out of a GOAL.
   release?: { delay: number; x: number; y: number; vx: number; vy: number };
 };
@@ -261,37 +259,6 @@ function emitBurst(
     });
 }
 
-// Somewhere on the mats that is clear of the walls, the goals and the center
-// structure, and within an easy roll of `from` so the spill stays a spill
-// rather than a shot across the field. Falls back to the middle of the mats if
-// the draws keep landing on something.
-const SPILL_NEAR = 150;
-const SPILL_FAR = 330;
-
-function scatterSpot(from: { x: number; y: number }) {
-  const edge = BALL_MARGIN + 34;
-  const blocked = [
-    {
-      x: CENTER_STRUCTURE.x,
-      y: CENTER_STRUCTURE.y,
-      r: CENTER_STRUCTURE.radius + 40,
-    },
-    { x: BLUE_GOAL.x, y: BLUE_GOAL.y, r: GOAL_RADIUS + 60 },
-    { x: RED_GOAL.x, y: RED_GOAL.y, r: GOAL_RADIUS + 60 },
-  ];
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const reach = SPILL_NEAR + Math.random() * (SPILL_FAR - SPILL_NEAR);
-    const x = from.x + Math.cos(angle) * reach;
-    const y = from.y + Math.sin(angle) * reach;
-    if (x < edge || x > FIELD_SIZE - edge || y < edge || y > FIELD_SIZE - edge)
-      continue;
-    if (blocked.every((spot) => Math.hypot(x - spot.x, y - spot.y) > spot.r))
-      return { x, y };
-  }
-  return { x: FIELD_CENTER, y: FIELD_SIZE - edge };
-}
-
 // Move ARTIFACTS a robot was carrying into its GOAL. They stay off the mats,
 // but they now belong to the GOAL rather than to the robot.
 function storeInGoal(world: World, side: 'player' | 'bot', count: number) {
@@ -307,28 +274,14 @@ function storeInGoal(world: World, side: 'player' | 'bot', count: number) {
 function tipGoal(world: World, side: 'player' | 'bot') {
   const goal = side === 'player' ? BLUE_GOAL : RED_GOAL;
   const spilled = world.pieces.filter((piece) => piece.stored === side);
+  const shots = spillPlan(goal, spilled.length);
   spilled.forEach((piece, index) => {
-    const spot = scatterSpot(goal);
-    // ARTIFACTS leave the GOAL one at a time, each from its own point on the
-    // rim, and roll out on the gentle spill curve until they settle. Releasing
-    // them in sequence keeps them from piling into each other on the way out.
-    const rim = ((index + 0.5) / spilled.length) * Math.PI * 2;
-    const from = {
-      x: goal.x + Math.cos(rim) * (GOAL_RADIUS + 22),
-      y: goal.y + Math.sin(rim) * (GOAL_RADIUS + 22),
-    };
-    const dx = spot.x - from.x;
-    const dy = spot.y - from.y;
-    const travel = Math.max(Math.hypot(dx, dy), 1);
-    const launch = rollSpeed(travel, SPILL_DRAG);
+    // ARTIFACTS leave the GOAL one at a time, in a shuffled order and at
+    // uneven intervals, each from the point on the rim facing where it is
+    // headed, and roll out on the gentle spill curve until they settle.
+    const { x, y, vx, vy, delay } = shots[index];
     piece.stored = undefined;
-    piece.release = {
-      delay: index * 0.11,
-      x: from.x,
-      y: from.y,
-      vx: (dx / travel) * launch,
-      vy: (dy / travel) * launch,
-    };
+    piece.release = { delay, x, y, vx, vy };
   });
   emitBurst(world, goal.x, goal.y, '#ffd166', `+${TIP_POINTS}`);
   if (side === 'player') {
@@ -341,9 +294,20 @@ function tipGoal(world: World, side: 'player' | 'bot') {
   }
 }
 
+// A robot parked beside a GOAL sits right where its ARTIFACTS come out.
+// Without a moment's grace it would swallow one the instant it appeared, which
+// looks like a ball bouncing out and vanishing.
+const SPILL_GRACE = 0.7;
+
+// Whether an ARTIFACT is lying on the mats, free for either robot to take.
+function pickable(piece: Piece) {
+  return piece.active && !(piece.grace && piece.grace > 0);
+}
+
 // Let queued ARTIFACTS out of a tipped GOAL as their turn comes round.
 function releaseSpills(world: World, dt: number) {
   for (const piece of world.pieces) {
+    if (piece.grace) piece.grace = Math.max(0, piece.grace - dt);
     const release = piece.release;
     if (!release) continue;
     release.delay -= dt;
@@ -356,6 +320,7 @@ function releaseSpills(world: World, dt: number) {
     piece.vy = release.vy;
     piece.active = true;
     piece.spill = true;
+    piece.grace = SPILL_GRACE;
     piece.collector = undefined;
     piece.release = undefined;
     emitBurst(
@@ -369,7 +334,6 @@ function releaseSpills(world: World, dt: number) {
 
 export function GameArena({
   selected,
-  mountSlots,
   handling,
   difficulty,
   onFinish,
@@ -426,40 +390,25 @@ export function GameArena({
     dragFor: collectDragFor,
     grab: collectGrab,
   } = collectProfile(selected.collect);
-  const playerTurnRate = turnRate(selected.drive);
   const playerStrafe = strafeFactor(selected.drive);
   // How close the robot has to get to load the GOAL: what the lift reaches,
   // plus whatever the scoring tool can throw.
-  const scoreRadius =
-    (selected.reach === 'cascade'
-      ? 200
-      : selected.reach === 'turret'
-        ? 165
-        : selected.reach === 'elevator'
-          ? 120
-          : 90) + scoreReachBonus(selected.score);
-  const baseSpeed =
-    selected.drive === 'orbit'
-      ? 330
-      : selected.drive === 'trailblazer'
-        ? 315
-        : selected.drive === 'comet'
-          ? 290
-          : 165;
-  const speed = baseSpeed * (selected.assist === 'align' ? 0.88 : 1);
+  const scoreRadius = scoreReach(selected.reach, selected.score);
+  // Drivetrain speed, slowed by a heavy collector or lift and by Auto Align.
+  const speed = topSpeed(selected);
   // The Handling trait shown in the workshop is the number that drives here, so
   // a heavy build feels sluggish off the line and slides further when released.
   const { acceleration, braking } = handlingProfile(handling);
   const alignTolerance = selected.assist === 'align' ? 20 : 0;
-  // Storage that feeds the scorer directly shortens the pause between loads.
+  // Seconds between loads, set by the scoring tool.
   const scoreDelay =
-    (selected.score === 'burst'
+    selected.score === 'burst'
       ? 0.15
       : selected.score === 'flywheel'
         ? 0.28
         : selected.score === 'tiptray'
           ? 1.1
-          : 0.5) * reloadFactor(selected.carry);
+          : 0.5;
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -491,10 +440,12 @@ export function GameArena({
         event.preventDefault();
       keysRef.current.add(event.key.toLowerCase());
       if (event.key === 'Escape' && !event.repeat) setPaused((value) => !value);
-      if (event.key.toLowerCase() === 'c' && !event.repeat)
-        setCameraMode((value) =>
-          value === 'arena' ? 'follow' : value === 'follow' ? 'orbit' : 'arena',
-        );
+      if (
+        event.key.toLowerCase() === 'c' &&
+        !event.repeat &&
+        !pausedRef.current
+      )
+        setCameraMode((value) => (value === 'arena' ? 'follow' : 'arena'));
     };
     const up = (event: KeyboardEvent) =>
       keysRef.current.delete(event.key.toLowerCase());
@@ -524,7 +475,7 @@ export function GameArena({
     if (!canvas || !stage) return;
     let scene: ReturnType<typeof createArenaScene>;
     try {
-      scene = createArenaScene(canvas, selected, worldRef.current, mountSlots);
+      scene = createArenaScene(canvas, selected, worldRef.current);
     } catch {
       queueMicrotask(() => setSceneFailed(true));
       return;
@@ -590,7 +541,8 @@ export function GameArena({
       moveBody(
         world.player,
         dt,
-        playerTurnRate,
+        // Swallowing an ARTIFACT makes the robot hard to turn.
+        intakeTurnRate(selected.drive, world.player.intake > 0),
         inputLength > 0 ? Math.atan2(iy, ix) : undefined,
       );
       resolveObstacle(world.player);
@@ -602,7 +554,7 @@ export function GameArena({
       const inReach = world.pieces
         .filter(
           (piece) =>
-            piece.active &&
+            pickable(piece) &&
             collectorTakes(selected.collect, piece.color) &&
             distance(world.player, piece) <= pickupRadius + alignTolerance,
         )
@@ -670,13 +622,13 @@ export function GameArena({
           usedSpace(bot.carried, 'bot') >= botCapacity ||
           (world.botIntent === 'Heading to the GOAL' &&
             bot.carried.length > 0) ||
-          !world.pieces.some((piece) => piece.active)
+          !world.pieces.some(pickable)
         ) {
           world.botTarget = RED_GOAL;
           world.botIntent = 'Heading to the GOAL';
         } else {
           const targetPiece = world.pieces
-            .filter((piece) => piece.active)
+            .filter(pickable)
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (targetPiece) {
             world.botTarget = targetPiece;
@@ -734,7 +686,7 @@ export function GameArena({
           if (goalTips(world.botGoal)) tipGoal(world, 'bot');
         } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
-            .filter((item) => item.active)
+            .filter(pickable)
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (piece && distance(bot, piece) < 43) {
             piece.active = false;
@@ -788,8 +740,8 @@ export function GameArena({
 
       if (world.time <= 0 && !world.finished) {
         world.finished = true;
-        const baseBonus = distance(world.player, BLUE_BASE) < 88;
-        const botBase = distance(world.bot, RED_BASE) < 88;
+        const baseBonus = inZone(world.player, BLUE_BASE_ZONE);
+        const botBase = inZone(world.bot, RED_BASE_ZONE);
         if (baseBonus) world.playerScore += 15;
         if (botBase) world.botScore += 15;
         finishRef.current({
@@ -827,7 +779,7 @@ export function GameArena({
       const world = worldRef.current;
       if (hudClock > 0.1) {
         const nearest = world.pieces
-          .filter((piece) => piece.active)
+          .filter(pickable)
           .sort(
             (a, b) => distance(world.player, a) - distance(world.player, b),
           )[0];
@@ -836,11 +788,9 @@ export function GameArena({
         let prompt =
           target?.kind === 'goal'
             ? 'Drive to the blue GOAL'
-            : target?.kind === 'piece' && selected.assist === 'coloreye'
-              ? `Collect a ${target.color === 'P' ? 'purple' : 'green'} ARTIFACT`
-              : target
-                ? 'Drive to an ARTIFACT'
-                : 'No ARTIFACTS left on the field';
+            : target
+              ? 'Drive to an ARTIFACT'
+              : 'No ARTIFACTS left on the field';
         if (nearGoal && target?.kind === 'goal')
           prompt = 'Hold ACTION to score';
         else if (
@@ -894,9 +844,7 @@ export function GameArena({
     scoreDelay,
     scoreRadius,
     selected,
-    mountSlots,
     speed,
-    playerTurnRate,
     playerStrafe,
   ]);
 
@@ -984,33 +932,30 @@ export function GameArena({
             }
           />
           <div className="arena-camera-switch" aria-label="Field camera">
-            {(['arena', 'follow', 'orbit'] as const).map((mode) => (
+            {(['arena', 'follow'] as const).map((mode) => (
               <button
                 key={mode}
                 aria-pressed={cameraMode === mode}
+                disabled={paused}
                 onClick={() => {
                   setCameraMode(mode);
                   canvasRef.current?.focus({ preventScroll: true });
                 }}
               >
-                {mode === 'arena'
-                  ? 'Arena'
-                  : mode === 'follow'
-                    ? 'Follow robot'
-                    : 'Free orbit'}
+                {mode === 'arena' ? 'Arena' : 'Follow robot'}
               </button>
             ))}
             <kbd>C</kbd>
           </div>
           <div className="arena-event-label">
             <b>FIELD / 01</b>
-            <span>Artifact Rush Â· FIRST-inspired challenge</span>
+            <span>Artifact Rush &middot; FIRST-inspired challenge</span>
           </div>
           {countdown > 0 && !sceneFailed && (
             <output className="match-countdown">
               <span>Drivers, ready?</span>
               <strong>{countdown}</strong>
-              <p>WASD to drive Â· Space to collect & score</p>
+              <p>WASD to drive &middot; Space to collect & score</p>
             </output>
           )}
           {sceneFailed && (
@@ -1031,7 +976,7 @@ export function GameArena({
             <div className="pause-overlay">
               <Pause />
               <h2>Match paused</h2>
-              <p>Take your time. The clock is stopped.</p>
+              <p>Take your time. The clock and camera are stopped.</p>
               <Button
                 onClick={() => {
                   setPaused(false);
@@ -1176,7 +1121,7 @@ export function GameArena({
             className="unstuck-button"
             onClick={resetRobot}
           >
-            <RotateCcw /> Reset robot <span>âˆ’3 sec</span>
+            <RotateCcw /> Reset robot <span>&minus;3 sec</span>
           </Button>
           <div className="match-tip">
             <strong>PIT TIP</strong>

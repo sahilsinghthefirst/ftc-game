@@ -4,22 +4,39 @@ import type { World } from './game-arena';
 
 type GuidanceWorld = Pick<World, 'player' | 'pieces' | 'time'>;
 
+// Slots in each storage module. A green fills one; a big purple fills two,
+// except in the Low Rider Hopper (see `artifactSpace`).
 export function carryCapacity(module: string) {
-  if (module === 'stackpack') return 7;
-  if (module === 'lowbin') return 4;
-  if (module === 'beltbridge') return 3;
-  return 2;
+  if (module === 'stackpack') return 6;
+  return 4;
+}
+
+// Top speed on the mats for each drivetrain, before anything else on the
+// robot slows it down.
+export function driveSpeed(drive: string) {
+  if (drive === 'orbit') return 330;
+  if (drive === 'trailblazer') return 315;
+  if (drive === 'comet') return 290;
+  return 185;
 }
 
 // How fast each drivetrain swings its nose round, in radians per second. The
-// six-wheeler really does turn like a bus: its wheels have to scrub sideways
-// to rotate, so it swings round roughly five times slower than the omni, which
-// just spins its rollers.
+// traction base pivots hardest of all on its grippy wheels; the six-wheeler
+// really does turn like a bus: its wheels have to scrub sideways to rotate, so
+// it swings round roughly five times slower than the omni.
 export function turnRate(drive: string) {
+  if (drive === 'anchor') return 12;
   if (drive === 'orbit') return 10;
   if (drive === 'comet') return 9;
-  if (drive === 'anchor') return 6.5;
   return 2;
+}
+
+// Turning while the intake is busy swallowing an ARTIFACT is hard: the robot
+// swings round at this fraction of its usual rate until the intake is clear.
+export const INTAKE_TURN_FACTOR = 0.3;
+
+export function intakeTurnRate(drive: string, intaking: boolean) {
+  return turnRate(drive) * (intaking ? INTAKE_TURN_FACTOR : 1);
 }
 
 // How much push a drivetrain has sideways, as a fraction of its forward push.
@@ -48,15 +65,33 @@ export type CollectProfile = {
   grab: number;
   // A collector that only handles one colour leaves the rest on the mats.
   takes?: 'P' | 'G';
+  // Top speed multiplier the collector costs all the time, from its weight.
+  topSpeed: number;
 };
 
 export function collectProfile(module: string): CollectProfile {
+  // Heavy twin rollers: the robot is slower everywhere for carrying them.
   if (module === 'twinflex')
-    return { radius: 58, cycle: 0.14, drag: 0.92, dragFor: 0.12, grab: 1 };
-  // Two jaws that close on a pair at once - slow, but it fills storage in half
-  // the trips when ARTIFACTS are lying together.
+    return {
+      radius: 58,
+      cycle: 0.14,
+      drag: 0.92,
+      dragFor: 0.12,
+      grab: 1,
+      topSpeed: 0.84,
+    };
+  // Two jaws that close on a pair at once. Every grab is a long, slow clamp
+  // that bogs the robot down, so it only pays off when two ARTIFACTS are lying
+  // together - closing it on a lone one wastes most of two seconds.
   if (module === 'dualjaw')
-    return { radius: 66, cycle: 0.62, drag: 0.6, dragFor: 0.45, grab: 2 };
+    return {
+      radius: 66,
+      cycle: 1.6,
+      drag: 0.4,
+      dragFor: 1,
+      grab: 2,
+      topSpeed: 1,
+    };
   // A sorter that only swallows the big purples. They are worth 1.5 each
   // toward a tip, so it fills a GOAL fastest - as long as you ignore green.
   if (module === 'sorter')
@@ -67,8 +102,16 @@ export function collectProfile(module: string): CollectProfile {
       dragFor: 0.25,
       grab: 1,
       takes: 'P',
+      topSpeed: 1,
     };
-  return { radius: 95, cycle: 0.85, drag: 0.3, dragFor: 0.7, grab: 1 };
+  return {
+    radius: 95,
+    cycle: 0.72,
+    drag: 0.3,
+    dragFor: 0.7,
+    grab: 1,
+    topSpeed: 1,
+  };
 }
 
 // How hard a drivetrain is to shove out of the way. Six wheels of grip win a
@@ -86,9 +129,34 @@ export function scoreReachBonus(score: string) {
   return score === 'flywheel' ? 60 : 0;
 }
 
-// Storage that feeds the scorer directly cuts the pause between loads.
-export function reloadFactor(carry: string) {
-  return carry === 'beltbridge' ? 0.7 : 1;
+// The four lifts trade reach against speed. The taller and heavier the lift,
+// the further out it can load the GOAL from - and the slower the whole robot
+// drives for carrying it. Listed shortest reach, fastest robot first.
+export const REACH_ORDER = ['swingarm', 'elevator', 'turret', 'cascade'];
+
+export function reachProfile(reach: string) {
+  if (reach === 'swingarm') return { radius: 85, topSpeed: 1.12 };
+  if (reach === 'turret') return { radius: 170, topSpeed: 0.9 };
+  if (reach === 'cascade') return { radius: 220, topSpeed: 0.8 };
+  return { radius: 125, topSpeed: 1 };
+}
+
+// How close to the GOAL a robot has to be to load it: whatever the lift can
+// reach, plus anything the scoring tool adds. The match and the range ring on
+// the field both read this, so what players see is what counts.
+export function scoreReach(reach: string, score: string) {
+  return reachProfile(reach).radius + scoreReachBonus(score);
+}
+
+// Everything that sets how fast the robot drives on the mats: the drivetrain,
+// the weight of the collector and lift, and Auto Align holding it back.
+export function topSpeed(selected: Record<string, string>) {
+  return (
+    driveSpeed(selected.drive) *
+    collectProfile(selected.collect).topSpeed *
+    reachProfile(selected.reach).topSpeed *
+    (selected.assist === 'align' ? 0.88 : 1)
+  );
 }
 
 // Whether this collector will even touch a given ARTIFACT.
@@ -112,7 +180,6 @@ export function playerTarget(
         Math.hypot(b.x - world.player.x, b.y - world.player.y),
     );
   const carried = world.player.carried;
-  const colorEye = selected.assist === 'coloreye';
   // A big purple will not fit in the last free slot of most storage, and a
   // sorting collector will not touch the wrong colour at all, so only count
   // ARTIFACTS the robot could actually pick up.
@@ -121,12 +188,10 @@ export function playerTarget(
       canCarry(carried, piece.color, selected.carry) &&
       collectorTakes(selected.collect, piece.color),
   );
-  if (carried.length > 0 && (!colorEye || reachable.length === 0)) {
+  if (carried.length > 0) {
     return { kind: 'goal' as const, x: BLUE_GOAL.x, y: BLUE_GOAL.y };
   }
 
-  // Color Eye no longer sorts by colour - there is no pattern to chase - but it
-  // still keeps the robot collecting until its storage is full.
   const piece = reachable[0] ?? candidates[0];
   return piece ? { ...piece, kind: 'piece' as const } : undefined;
 }

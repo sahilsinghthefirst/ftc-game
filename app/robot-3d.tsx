@@ -17,8 +17,6 @@ type Props = {
   activeCategory: AssemblyCategory;
   draggingCategory: AssemblyCategory | null;
   snappingCategory: AssemblyCategory | null;
-  mountSlots: Record<AssemblyCategory, number>;
-  mechanismRunning: boolean;
   onSelectCategory?: (category: AssemblyCategory) => void;
 };
 const names: Record<AssemblyCategory, string> = {
@@ -202,30 +200,6 @@ export function Robot3DBay(props: Props) {
             motion.matches ? 1 : 1 - Math.exp(-12 * dt),
           );
         }
-        const running =
-          current.mechanismRunning && !motion.matches && !explodedNow;
-        if (running)
-          model.moving.wheels.forEach((w) => {
-            w.rotation.x += dt * 4;
-          });
-        const liftAmount = running ? (Math.sin(elapsed * 3.8) + 1) * 0.35 : 0;
-        if (model.moving.lift) {
-          const lift = model.moving.lift;
-          const rest = Number(lift.userData.restY ?? 0);
-          lift.position.y = THREE.MathUtils.damp(
-            lift.position.y,
-            rest + liftAmount,
-            14,
-            dt,
-          );
-        }
-        if (running)
-          model.groups.score.position.y =
-            (model.groups.score.userData.home as THREE.Vector3).y + liftAmount;
-        if (model.moving.intake)
-          model.moving.intake.rotation.x = running
-            ? Math.sin(elapsed * 12) * 0.07
-            : 0;
         const active = model.groups[current.activeCategory];
         const bounds = new THREE.Box3().setFromObject(active);
         const center = bounds.getCenter(new THREE.Vector3());
@@ -266,10 +240,10 @@ export function Robot3DBay(props: Props) {
       scene.remove(modelRef.current.root);
       disposeObject(modelRef.current.root);
     }
-    const model = createRobotModel(props.selected, props.mountSlots);
+    const model = createRobotModel(props.selected);
     scene.add(model.root);
     modelRef.current = model;
-  }, [props.selected, props.mountSlots]);
+  }, [props.selected]);
 
   const setCamera = (mode: string) => {
     const camera = cameraRef.current,

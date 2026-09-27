@@ -16,7 +16,7 @@ import {
 } from '../app/match-guidance.ts';
 import { pieceLayout } from '../app/field.ts';
 
-const loadout = { carry: 'lowbin', assist: 'coloreye' };
+const loadout = { carry: 'lowbin', collect: 'widewave', assist: 'range' };
 function world() {
   return {
     player: { x: 0, y: 0, carried: ['P'] },
@@ -32,44 +32,29 @@ function world() {
   };
 }
 
-test('Color Eye keeps collecting until storage is full, taking the nearest piece', () => {
+test('An empty robot is guided to the nearest ARTIFACT it can take', () => {
   const state = world();
+  state.player.carried = [];
   assert.equal(playerTarget(state, loadout).kind, 'piece');
-  // Nearest first now that there is no pattern to chase.
   assert.equal(playerTarget(state, loadout).id, 0);
   state.pieces[0].active = false;
   assert.equal(playerTarget(state, loadout).id, 1);
 });
 
-test('Color Eye sends a full robot to goal for every storage capacity', () => {
-  for (const carry of ['pocket', 'beltbridge', 'lowbin', 'stackpack']) {
-    const state = world();
-    // Greens are one slot each, so capacity counts them one for one.
-    state.player.carried = Array(carryCapacity(carry) - 1).fill('G');
-    assert.equal(playerTarget(state, { ...loadout, carry }).kind, 'piece');
-    state.player.carried.push('G');
-    assert.equal(playerTarget(state, { ...loadout, carry }).kind, 'goal');
-  }
+test('A PurpleSort robot is guided past greens to a purple', () => {
+  const state = world();
+  state.player.carried = [];
+  // The green is nearer, but the sorter would drive straight over it.
+  state.pieces[0].color = 'G';
+  state.pieces[1].color = 'P';
+  const target = playerTarget(state, { ...loadout, collect: 'sorter' });
+  assert.equal(target.color, 'P');
 });
 
-test('One free slot sends the robot past a big purple to a green', () => {
+test('Anything on board sends the robot to the GOAL, or nowhere once empty', () => {
   const state = world();
-  // A 2-slot magazine holding one green cannot take the nearer purple.
-  state.player.carried = ['G'];
-  const target = playerTarget(state, { ...loadout, carry: 'pocket' });
-  assert.equal(target.color, 'G');
-  // The hopper takes purples whole, so it goes for the nearer purple instead.
-  assert.equal(
-    playerTarget(state, { ...loadout, carry: BIG_ARTIFACT_STORAGE }).color,
-    'P',
-  );
-});
-
-test('Color Eye scores once the field is empty', () => {
-  const state = world();
-  state.pieces[1].active = false;
-  assert.equal(playerTarget(state, loadout).id, 0);
-  state.pieces[0].active = false;
+  assert.equal(playerTarget(state, loadout).kind, 'goal');
+  state.pieces.forEach((piece) => (piece.active = false));
   assert.equal(playerTarget(state, loadout).kind, 'goal');
   state.player.carried = [];
   assert.equal(playerTarget(state, loadout), undefined);
@@ -116,14 +101,15 @@ test('Purple ARTIFACTS are worth more but eat more storage', () => {
   assert.equal(artifactSpace('G', 'stackpack'), 1);
   assert.equal(artifactSpace('G', BIG_ARTIFACT_STORAGE), 1);
 
-  // A 2-slot magazine takes one purple or two greens.
-  assert.equal(canCarry([], 'P', 'pocket'), true);
-  assert.equal(canCarry(['P'], 'G', 'pocket'), false);
-  assert.equal(canCarry(['G'], 'G', 'pocket'), true);
-  assert.equal(canCarry(['G'], 'P', 'pocket'), false);
+  // The four-slot indexer takes two purples, or a purple and two greens.
+  assert.equal(carryCapacity('pocket'), 4);
+  assert.equal(canCarry(['P'], 'P', 'pocket'), true);
+  assert.equal(canCarry(['P', 'P'], 'G', 'pocket'), false);
+  assert.equal(canCarry(['P', 'G'], 'G', 'pocket'), true);
+  assert.equal(canCarry(['P', 'G'], 'P', 'pocket'), false);
 
   // The hopper's four slots take four purples - 6 toward a tip in one trip -
-  // while the seven-slot magazine only manages three purples and a green, 5.5.
+  // while the six-slot magazine only manages three purples, 4.5.
   assert.equal(carryCapacity(BIG_ARTIFACT_STORAGE), 4);
   assert.equal(usedSpace(['P', 'P', 'P', 'P'], BIG_ARTIFACT_STORAGE), 4);
   assert.equal(canCarry(['P', 'P', 'P'], 'P', BIG_ARTIFACT_STORAGE), true);
@@ -132,15 +118,12 @@ test('Purple ARTIFACTS are worth more but eat more storage', () => {
     false,
   );
 
-  assert.equal(carryCapacity('stackpack'), 7);
-  assert.equal(usedSpace(['P', 'P', 'P', 'G'], 'stackpack'), 7);
-  assert.equal(canCarry(['P', 'P', 'P', 'G'], 'G', 'stackpack'), false);
+  assert.equal(carryCapacity('stackpack'), 6);
+  assert.equal(usedSpace(['P', 'P', 'P'], 'stackpack'), 6);
+  assert.equal(canCarry(['P', 'P', 'P'], 'G', 'stackpack'), false);
 
   const hopperTrip = ['P', 'P', 'P', 'P'].reduce((t, c) => t + tipValue(c), 0);
-  const magazineTrip = ['P', 'P', 'P', 'G'].reduce(
-    (t, c) => t + tipValue(c),
-    0,
-  );
+  const magazineTrip = ['P', 'P', 'P'].reduce((t, c) => t + tipValue(c), 0);
   assert.ok(hopperTrip > magazineTrip, 'the hopper should win on purples');
 });
 

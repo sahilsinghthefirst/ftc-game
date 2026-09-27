@@ -1,29 +1,29 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import {
-  createRobotModel,
-  disposeObject,
-  defaultMountSlots,
-} from './robot-model';
+import { createRobotModel, disposeObject } from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { label, place, ring, setupScene, solid } from './scene-kit';
 import {
-  BLUE_BASE,
+  BLUE_BASE_ZONE,
   BLUE_GOAL,
   FIELD_CENTER,
   FIELD_SIZE,
-  RED_BASE,
+  RED_BASE_ZONE,
   RED_GOAL,
   TILE,
   TILES,
+  zoneCenter,
 } from './field';
 import type { World } from './game-arena';
-import { playerTarget } from './match-guidance';
+import { playerTarget, scoreReach } from './match-guidance';
 
-export type CameraMode = 'arena' | 'follow' | 'orbit';
+export type CameraMode = 'arena' | 'follow';
 const SCALE = 0.02;
 const blue = 0x359be5,
   red = 0xe65856;
+// Top surface of the foam mats (their 0.07 depth plus bevel, on top of the
+// backing). Tape, rings and guide lines have to sit above this or the mats
+// hide them, showing only in the seams.
+const MAT_TOP = 0.155;
 const position = (x: number, z: number, y = 0.08) =>
   new THREE.Vector3((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
@@ -228,10 +228,19 @@ function foamFloor(scene: THREE.Scene) {
   scene.add(backing);
 }
 
+// Width of the alliance-colored tape round each BASE, in scene units.
+const BASE_BORDER = 0.32;
+
+// The hall around the field was laid out for a field 8.1 units from center to
+// wall. Everything beside the field moves out by however much further the
+// wall now is, so the benches and trusses always clear it.
+const HALL_LAYOUT_HALF = 8.1;
+
 function arenaRoom(scene: THREE.Scene) {
   const half = (FIELD_SIZE * SCALE) / 2;
+  const grow = half - HALL_LAYOUT_HALF;
   const rail = half * 2 + 0.3;
-  place(scene, solid(70, 0.3, 60, 0x1c2c36), 0, -0.45, 0);
+  place(scene, solid(70 + grow * 4, 0.3, 60 + grow * 4, 0x1c2c36), 0, -0.45, 0);
   place(scene, solid(rail + 0.8, 0.22, rail + 0.8, 0x0f1c24, 0.6), 0, -0.12, 0);
   foamFloor(scene);
   for (const x of [-half - 0.1, half + 0.1]) {
@@ -267,17 +276,28 @@ function arenaRoom(scene: THREE.Scene) {
     for (let x = -half; x <= half; x += TILE * SCALE)
       place(scene, solid(0.12, 0.7, 0.14, 0x7e949f, 0.8), x, 0.35, z);
   }
-  for (const [base, color] of [
-    [BLUE_BASE, blue],
-    [RED_BASE, red],
+  // Each BASE fills its corner mat exactly, so what players see is the area
+  // that counts: alliance-colored tape round the edge, dark inside.
+  for (const [zone, color] of [
+    [BLUE_BASE_ZONE, blue],
+    [RED_BASE_ZONE, red],
   ] as const) {
-    const spot = position(base.x, base.y);
-    const tape = solid(2.5, 0.009, 2.1, color);
-    place(scene, tape, spot.x, 0.06, spot.z);
-    place(scene, solid(2.3, 0.015, 1.9, 0x384e60), spot.x, 0.066, spot.z);
+    const middle = zoneCenter(zone);
+    const spot = position(middle.x, middle.y);
+    const wide = (zone.right - zone.left) * SCALE;
+    const deep = (zone.bottom - zone.top) * SCALE;
+    const tape = solid(wide, 0.009, deep, color);
+    place(scene, tape, spot.x, MAT_TOP, spot.z);
+    place(
+      scene,
+      solid(wide - BASE_BORDER * 2, 0.015, deep - BASE_BORDER * 2, 0x384e60),
+      spot.x,
+      MAT_TOP + 0.006,
+      spot.z,
+    );
     const marker = label('BASE', 1.2, 0.4, '#384e60', '#cfdee8');
     marker.rotation.x = -Math.PI / 2;
-    place(scene, marker, spot.x, 0.085, spot.z + 0.26);
+    place(scene, marker, spot.x, MAT_TOP + 0.02, spot.z + 0.26);
   }
   const center = new THREE.Mesh(
     new THREE.CylinderGeometry(1.36, 1.45, 0.65, 6),
@@ -303,11 +323,12 @@ function arenaRoom(scene: THREE.Scene) {
   const redSpot = position(RED_GOAL.x, RED_GOAL.y);
   goal(scene, blueSpot.x, blueSpot.z, blue, 'BLUE GOAL');
   goal(scene, redSpot.x, redSpot.z, red, 'RED GOAL');
-  for (let z = -5; z <= 5; z += 1)
-    place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, 0.07, z);
+  const midline = Math.floor(half * 0.62);
+  for (let z = -midline; z <= midline; z += 1)
+    place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, MAT_TOP, z);
   // Open competition hall with trusses, real benches, and readable wayfinding.
-  place(scene, solid(52, 14, 0.3, 0x1b2e3b), 0, 4, -17);
-  place(scene, label('FIELD / LAB', 13, 2, '#1b2e3b'), 0, 5.7, -16.8);
+  place(scene, solid(52 + grow * 2, 14, 0.3, 0x1b2e3b), 0, 4, -17 - grow);
+  place(scene, label('FIELD / LAB', 13, 2, '#1b2e3b'), 0, 5.7, -16.8 - grow);
   place(
     scene,
     label(
@@ -319,22 +340,22 @@ function arenaRoom(scene: THREE.Scene) {
     ),
     0,
     3.9,
-    -16.75,
+    -16.75 - grow,
   );
   for (const side of [-1, 1]) {
     for (let row = 0; row < 3; row++) {
       place(
         scene,
-        solid(5.5, 0.35, 18, 0x354d5e),
-        side * (16 + row * 1.6),
+        solid(5.5, 0.35, 18 + grow * 2, 0x354d5e),
+        side * (16 + grow + row * 1.6),
         row * 0.55 - 0.1,
         -1,
       );
-      for (let z = -8; z < 8; z += 1.15) {
+      for (let z = -8 - grow; z < 8 + grow; z += 1.15) {
         place(
           scene,
           solid(0.75, 0.16, 0.75, side < 0 ? 0x315f7a : 0x74484b),
-          side * (14.4 + row * 1.6),
+          side * (14.4 + grow + row * 1.6),
           row * 0.55 + 0.17,
           z,
         );
@@ -349,19 +370,19 @@ function arenaRoom(scene: THREE.Scene) {
         '#132530',
         side < 0 ? '#62b6ed' : '#e7807d',
       ),
-      side * 10,
+      side * (10 + grow),
       2.5,
-      -13,
+      -13 - grow,
     );
   }
-  for (const x of [-13, 13]) {
-    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, -12);
-    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, 9);
+  for (const x of [-13 - grow, 13 + grow]) {
+    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, -12 - grow);
+    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, 9 + grow);
   }
-  for (const z of [-12]) {
-    place(scene, solid(26, 0.15, 0.2, 0x80939f, 0.8), 0, 10.5, z);
-    place(scene, solid(26, 0.15, 0.2, 0x80939f, 0.8), 0, 9.8, z);
-    for (let x = -12; x <= 12; x += 1.5) {
+  for (const z of [-12 - grow]) {
+    place(scene, solid(26 + grow * 2, 0.15, 0.2, 0x80939f, 0.8), 0, 10.5, z);
+    place(scene, solid(26 + grow * 2, 0.15, 0.2, 0x80939f, 0.8), 0, 9.8, z);
+    for (let x = -12 - grow; x <= 12 + grow; x += 1.5) {
       const strut = solid(1.65, 0.08, 0.08, 0x80939f, 0.8);
       strut.rotation.z = 0.45;
       place(scene, strut, x, 10.15, z);
@@ -383,23 +404,26 @@ export function createArenaScene(
   canvas: HTMLCanvasElement,
   selected: Record<string, string>,
   world: World,
-  mountSlots = defaultMountSlots,
 ) {
   const { scene, renderer, environment } = setupScene(canvas, 0x182936);
   arenaRoom(scene);
-  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120);
-  const controls = new OrbitControls(camera, canvas);
-  controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minDistance = 7;
-  controls.maxDistance = 42;
-  controls.maxPolarAngle = 1.35;
+  // Fog and draw distance were tuned for the original field; stretch them with
+  // the field so a bigger one is never lost in the haze.
+  const roomy = (FIELD_SIZE * SCALE) / (HALL_LAYOUT_HALF * 2);
+  if (scene.fog instanceof THREE.Fog) {
+    scene.fog.near *= roomy;
+    scene.fog.far *= roomy;
+  }
+  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120 * roomy);
+  // Where the camera is looking. Driving input is turned to match it, so
+  // "up" on the stick always drives away from the camera.
+  const cameraTarget = new THREE.Vector3();
   let mode: CameraMode = 'arena';
   let width = 1,
     height = 1;
   const lookAt = new THREE.Vector3(0, 0, 0);
   const desiredPosition = new THREE.Vector3();
-  const player = createRobotModel(selected, mountSlots);
+  const player = createRobotModel(selected);
   const bot = createRobotModel({
     drive: 'trailblazer',
     collect: 'twinflex',
@@ -429,18 +453,13 @@ export function createArenaScene(
   scene.add(playerRing);
   const botRing = ring(0.78, red, 0.025);
   scene.add(botRing);
-  const aimRing = ring(0.42, 0xf0c35b, 0.027);
+  // Gold for ARTIFACTS and the GOAL; alliance blue when it points at the BASE.
+  const aimGold = 0xf0c35b;
+  const aimRing = ring(0.42, aimGold, 0.027);
   scene.add(aimRing);
-  const scoreRadius =
-    (selected.reach === 'cascade'
-      ? 150
-      : selected.reach === 'turret'
-        ? 138
-        : selected.reach === 'elevator'
-          ? 120
-          : 108) * SCALE;
+  const scoreRadius = scoreReach(selected.reach, selected.score) * SCALE;
   const rangeRing = ring(scoreRadius, blue, 0.018);
-  rangeRing.position.copy(position(95, 108));
+  rangeRing.position.copy(position(BLUE_GOAL.x, BLUE_GOAL.y, MAT_TOP + 0.01));
   rangeRing.visible = selected.assist === 'range';
   scene.add(rangeRing);
   const pieces = new Map<number, THREE.Group>();
@@ -469,7 +488,7 @@ export function createArenaScene(
       new THREE.Vector3(),
     ]),
     new THREE.LineDashedMaterial({
-      color: 0xefc456,
+      color: 0xf0c35b,
       dashSize: 0.16,
       gapSize: 0.12,
       transparent: true,
@@ -495,8 +514,8 @@ export function createArenaScene(
   const resetArenaCamera = () => {
     const distance = arenaDistance();
     camera.position.set(0, distance * 0.76, distance * 0.78);
-    controls.target.set(0, 0, -0.2);
-    camera.lookAt(controls.target);
+    cameraTarget.set(0, 0, -0.2);
+    camera.lookAt(cameraTarget);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(canvas.parentElement!);
@@ -540,7 +559,8 @@ export function createArenaScene(
         Math.sin(angle - model.root.rotation.y),
         Math.cos(angle - model.root.rotation.y),
       );
-      model.root.rotation.y += error * Math.min(1, dt * 14);
+      // Paused means frozen: not even the last of a turn plays out.
+      if (!paused) model.root.rotation.y += error * Math.min(1, dt * 14);
       const speed = Math.hypot(actor.vx, actor.vy);
       if (!paused) {
         const forward =
@@ -620,7 +640,12 @@ export function createArenaScene(
             from: model.groups.score.localToWorld(
               new THREE.Vector3(0, 0.3, 0.35),
             ),
-            to: position(index === 0 ? 95 : 905, 108, 1.8),
+            // Into the top of the funnel of the GOAL it was loaded into.
+            to: position(
+              index === 0 ? BLUE_GOAL.x : RED_GOAL.x,
+              index === 0 ? BLUE_GOAL.y : RED_GOAL.y,
+              1.8,
+            ),
             elapsed: -i * 0.09,
             duration: 0.58,
             scored: true,
@@ -707,18 +732,23 @@ export function createArenaScene(
         flights.splice(i, 1);
       }
     }
-    playerRing.position.copy(position(state.player.x, state.player.y));
-    botRing.position.copy(position(state.bot.x, state.bot.y));
+    playerRing.position.copy(
+      position(state.player.x, state.player.y, MAT_TOP + 0.01),
+    );
+    botRing.position.copy(position(state.bot.x, state.bot.y, MAT_TOP + 0.01));
     const target = playerTarget(state, selected);
     if (target) {
       aimRing.visible = true;
-      aimRing.position.copy(position(target.x, target.y, 0.095));
+      aimRing.position.copy(position(target.x, target.y, MAT_TOP + 0.02));
       aimRing.scale.setScalar(target.kind === 'piece' ? 1 : 2.5);
+      const aimColor = target.kind === 'base' ? blue : aimGold;
+      (aimRing.material as THREE.MeshBasicMaterial).color.setHex(aimColor);
+      (targetLine.material as THREE.LineDashedMaterial).color.setHex(aimColor);
       const attr = targetLine.geometry.getAttribute(
         'position',
       ) as THREE.BufferAttribute;
-      const start = position(state.player.x, state.player.y, 0.1),
-        end = position(target.x, target.y, 0.1);
+      const start = position(state.player.x, state.player.y, MAT_TOP + 0.03),
+        end = position(target.x, target.y, MAT_TOP + 0.03);
       attr.setXYZ(0, start.x, start.y, start.z);
       attr.setXYZ(1, end.x, end.y, end.z);
       attr.needsUpdate = true;
@@ -731,35 +761,34 @@ export function createArenaScene(
       aimRing.visible = false;
       targetLine.visible = false;
     }
-    controls.enabled = mode === 'orbit';
-    if (mode === 'follow') {
+    // The camera holds exactly where it is while paused, so the whole field
+    // visibly stops rather than the view still drifting after the robot.
+    if (mode === 'follow' && !paused) {
       const p = player.root.position;
       desiredPosition.set(p.x, 6, p.z + 8);
       const smoothing = motion.matches ? 1 : 1 - Math.exp(-6 * dt);
       camera.position.lerp(desiredPosition, smoothing);
       lookAt.lerp(new THREE.Vector3(p.x, 0.1, p.z - 2), smoothing);
       camera.lookAt(lookAt);
-      controls.target.copy(lookAt);
-    } else if (mode === 'orbit') controls.update();
+      cameraTarget.copy(lookAt);
+    }
     renderer.render(scene, camera);
   };
   return {
     render,
     setCamera(next: CameraMode) {
       mode = next;
-      controls.enabled = next === 'orbit';
       if (next === 'arena') resetArenaCamera();
       if (next === 'follow') {
         const p = position(world.player.x, world.player.y);
         lookAt.set(p.x, 0.1, p.z - 2);
         camera.position.set(p.x, 6, p.z + 8);
-        controls.target.copy(lookAt);
+        cameraTarget.copy(lookAt);
         camera.lookAt(lookAt);
       }
-      if (next === 'orbit') controls.update();
     },
     movement(x: number, y: number) {
-      const delta = camera.position.clone().sub(controls.target);
+      const delta = camera.position.clone().sub(cameraTarget);
       const angle = Math.atan2(delta.x, delta.z);
       return {
         x: x * Math.cos(angle) + y * Math.sin(angle),
@@ -769,7 +798,6 @@ export function createArenaScene(
     dispose() {
       disposed = true;
       observer.disconnect();
-      controls.dispose();
       disposeObject(scene);
       pieces.forEach((mesh) => {
         if (!mesh.parent) disposeObject(mesh);

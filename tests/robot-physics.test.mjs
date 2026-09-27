@@ -8,17 +8,34 @@ import {
   rollBalls,
   rollDistance,
   rollSpeed,
+  spillPlan,
+  SPILL_APART,
+  SPILL_DRAG,
+  SPILL_FAR,
 } from '../app/robot-physics.ts';
-import { strafeFactor, turnRate } from '../app/match-guidance.ts';
+import {
+  intakeTurnRate,
+  strafeFactor,
+  turnRate,
+} from '../app/match-guidance.ts';
 import {
   BALL_MARGIN,
+  BLUE_BASE,
+  BLUE_BASE_ZONE,
+  BLUE_GOAL,
   CENTER_STRUCTURE,
   FIELD_SIZE,
+  GOAL_RADIUS,
+  RED_BASE,
+  RED_BASE_ZONE,
+  RED_GOAL,
   ROBOT_MARGIN,
   TILE,
   TILES,
+  inZone,
   pieceLayout,
 } from '../app/field.ts';
+import { ROBOT_CLEARANCE } from '../app/bot-driver.ts';
 
 const body = () => ({ x: 200, y: 200, vx: 0, vy: 0, angle: 0 });
 const step = 1 / 60;
@@ -157,14 +174,14 @@ test('walls stop motion and heading changes are bounded', () => {
   assert.equal(corner.y, ROBOT_MARGIN);
 });
 
-test('the six-wheeler swings round far slower than the other bases', () => {
+test('traction pivots quickest and the six-wheeler far slower than the rest', () => {
   // Heading always chases the direction of travel; the drivetrain decides how
   // fast. Start facing north, drive due east, and count the steps each chassis
   // needs to bring its nose round.
-  const stepsToComeRound = (drive) => {
+  const stepsToComeRound = (drive, intaking = false) => {
     const robot = { x: 400, y: 400, vx: 200, vy: 0, angle: -Math.PI / 2 };
     for (let i = 1; i <= 400; i++) {
-      moveBody(robot, step, turnRate(drive));
+      moveBody(robot, step, intakeTurnRate(drive, intaking));
       if (Math.abs(robot.angle) < 0.02) return i;
     }
     return Infinity;
@@ -175,9 +192,15 @@ test('the six-wheeler swings round far slower than the other bases', () => {
   const traction = stepsToComeRound('anchor');
 
   // More steps means a slower turn.
-  assert.ok(omni < mecanum, 'omni should be the quickest to come round');
-  assert.ok(mecanum < traction);
-  assert.ok(traction < sixWheel);
+  assert.ok(traction < omni, 'traction should be the quickest to come round');
+  assert.ok(omni < mecanum);
+  assert.ok(mecanum < sixWheel);
+  // Swallowing an ARTIFACT makes every base hard to turn.
+  for (const drive of ['trailblazer', 'orbit', 'comet', 'anchor'])
+    assert.ok(
+      stepsToComeRound(drive, true) > stepsToComeRound(drive) * 2,
+      `${drive} turns as easily while intaking`,
+    );
   // The gap is meant to be obvious, not subtle.
   assert.ok(
     sixWheel > omni * 4,
@@ -200,7 +223,158 @@ test('the field is a square of six by six mats', () => {
       gap > CENTER_STRUCTURE.radius + 14,
       `piece at ${x},${y} overlaps center`,
     );
+    for (const goal of [BLUE_GOAL, RED_GOAL])
+      assert.ok(
+        Math.hypot(x - goal.x, y - goal.y) > GOAL_RADIUS + 40,
+        `piece at ${x},${y} sits on a GOAL`,
+      );
   }
+});
+
+test('each BASE is the whole mat in its bottom corner, flush with the walls', () => {
+  // Blue: its left and bottom edges are the arena's left and bottom walls.
+  assert.deepEqual(BLUE_BASE_ZONE, {
+    left: 0,
+    top: FIELD_SIZE - TILE,
+    right: TILE,
+    bottom: FIELD_SIZE,
+  });
+  // Red mirrors it into the bottom-right corner.
+  assert.deepEqual(RED_BASE_ZONE, {
+    left: FIELD_SIZE - TILE,
+    top: FIELD_SIZE - TILE,
+    right: FIELD_SIZE,
+    bottom: FIELD_SIZE,
+  });
+  // Robots park by driving to the middle, which is inside.
+  assert.ok(inZone(BLUE_BASE, BLUE_BASE_ZONE));
+  assert.ok(inZone(RED_BASE, RED_BASE_ZONE));
+  // The rectangle counts right into the corner a robot can reach, and not a
+  // step past its edges.
+  assert.ok(
+    inZone({ x: ROBOT_MARGIN, y: FIELD_SIZE - ROBOT_MARGIN }, BLUE_BASE_ZONE),
+  );
+  assert.ok(inZone({ x: TILE - 1, y: FIELD_SIZE - TILE + 1 }, BLUE_BASE_ZONE));
+  assert.ok(!inZone({ x: TILE + 1, y: FIELD_SIZE - 50 }, BLUE_BASE_ZONE));
+  assert.ok(!inZone({ x: 50, y: FIELD_SIZE - TILE - 1 }, BLUE_BASE_ZONE));
+  assert.ok(!inZone(BLUE_BASE, RED_BASE_ZONE));
+});
+
+test('the GOALS stand right against the center structure, blue left and red right', () => {
+  for (const goal of [BLUE_GOAL, RED_GOAL])
+    assert.equal(goal.y, CENTER_STRUCTURE.y);
+  assert.ok(BLUE_GOAL.x < CENTER_STRUCTURE.x);
+  assert.ok(RED_GOAL.x > CENTER_STRUCTURE.x);
+  assert.equal(
+    CENTER_STRUCTURE.x - BLUE_GOAL.x,
+    RED_GOAL.x - CENTER_STRUCTURE.x,
+  );
+  // Touching the structure: no gap a robot or even an ARTIFACT could slip
+  // through. Behind each GOAL there is still a wide lane to the wall.
+  const robot = 2 * ROBOT_CLEARANCE + 20;
+  for (const goal of [BLUE_GOAL, RED_GOAL]) {
+    const toCenter =
+      Math.abs(goal.x - CENTER_STRUCTURE.x) -
+      GOAL_RADIUS -
+      CENTER_STRUCTURE.radius;
+    const toWall = Math.min(goal.x, FIELD_SIZE - goal.x) - GOAL_RADIUS;
+    assert.ok(toCenter >= 0, 'GOAL overlaps the center structure');
+    assert.ok(toCenter < 10, `${toCenter} between GOAL and center`);
+    assert.ok(toWall > robot, `only ${toWall} behind the GOAL`);
+  }
+});
+
+test('every spilled ARTIFACT lands on open mats, thrown just hard enough', () => {
+  let seed = 7;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (const goal of [BLUE_GOAL, RED_GOAL]) {
+    for (let tip = 0; tip < 120; tip += 1) {
+      const shots = spillPlan(goal, 10, random);
+      assert.equal(shots.length, 10);
+      for (const shot of shots) {
+        assert.ok(
+          shot.landX > BALL_MARGIN && shot.landX < FIELD_SIZE - BALL_MARGIN,
+        );
+        assert.ok(
+          shot.landY > BALL_MARGIN && shot.landY < FIELD_SIZE - BALL_MARGIN,
+        );
+        // Never thrown into the center structure the GOAL leans on, nor at
+        // the other GOAL.
+        assert.ok(
+          Math.hypot(
+            shot.landX - CENTER_STRUCTURE.x,
+            shot.landY - CENTER_STRUCTURE.y,
+          ) >
+            CENTER_STRUCTURE.radius + 20,
+          `landed in the center at ${shot.landX},${shot.landY}`,
+        );
+        const other = goal === BLUE_GOAL ? RED_GOAL : BLUE_GOAL;
+        assert.ok(
+          Math.hypot(shot.landX - other.x, shot.landY - other.y) >
+            GOAL_RADIUS + 20,
+        );
+        // Launched at the speed that settles it on its spot.
+        const reach = Math.hypot(shot.landX - goal.x, shot.landY - goal.y);
+        const launch = Math.hypot(shot.vx, shot.vy);
+        assert.ok(
+          Math.abs(launch / SPILL_DRAG - (reach - GOAL_RADIUS - 22)) < 1,
+        );
+        assert.ok(reach <= SPILL_FAR);
+      }
+    }
+  }
+});
+
+test('spilled ARTIFACTS scatter in random directions, away from each other', () => {
+  let seed = 11;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const tips = 200;
+  let upField = 0;
+  let downField = 0;
+  const firstOut = new Set();
+  let sweeps = 0;
+  for (let tip = 0; tip < tips; tip += 1) {
+    const shots = spillPlan(BLUE_GOAL, 10, random);
+    // Never clumped: every landing spot keeps its distance from the rest.
+    for (let i = 0; i < shots.length; i += 1)
+      for (let j = i + 1; j < shots.length; j += 1)
+        assert.ok(
+          Math.hypot(
+            shots[i].landX - shots[j].landX,
+            shots[i].landY - shots[j].landY,
+          ) >=
+            SPILL_APART - 1,
+          'two ARTIFACTS landed on top of each other',
+        );
+    // Fanned all round the GOAL: headings from one tip cover most of the
+    // open directions, leaving no wide hole. Measured from straight away
+    // from the center structure, which the open arc is centered on.
+    const turn = shots.map((shot) => Math.atan2(-shot.vy, -shot.vx));
+    const sorted = [...turn].sort((a, b) => a - b);
+    assert.ok(sorted.at(-1) - sorted[0] > 3, 'the fan is too narrow');
+    for (let i = 1; i < sorted.length; i += 1)
+      assert.ok(sorted[i] - sorted[i - 1] < 1, 'a hole in the fan');
+    // Strength is random per ARTIFACT, so throws in one tip differ widely.
+    const reaches = shots.map((shot) =>
+      Math.hypot(shot.landX - BLUE_GOAL.x, shot.landY - BLUE_GOAL.y),
+    );
+    assert.ok(Math.max(...reaches) > Math.min(...reaches) * 1.5);
+    for (const shot of shots)
+      if (shot.landY < BLUE_GOAL.y) upField += 1;
+      else downField += 1;
+    // Released one after another, at uneven intervals and in no set order.
+    const gaps = shots.slice(1).map((shot, i) => shot.delay - shots[i].delay);
+    assert.equal(shots[0].delay, 0);
+    assert.ok(gaps.every((gap) => gap > 0.04 && gap < 0.2));
+    firstOut.add(Math.round(turn[0] * 2));
+    if (turn.every((angle, i) => i === 0 || angle >= turn[i - 1])) sweeps += 1;
+  }
+  // No favourite direction: up the field and down it are mirror images round
+  // this GOAL, so they should come up about equally often.
+  const upShare = upField / (upField + downField);
+  assert.ok(upShare > 0.4 && upShare < 0.6, `${upField} up, ${downField} down`);
+  assert.ok(firstOut.size >= 5, 'the first one out always goes the same way');
+  assert.ok(sweeps < tips * 0.05, `${sweeps} of ${tips} tips swept in order`);
 });
 
 test('a spilled ARTIFACT rolls out to about where it was aimed', () => {
@@ -221,6 +395,18 @@ test('a spilled ARTIFACT rolls out to about where it was aimed', () => {
     assert.ok(frames > 12 && frames < 200, `settled in ${frames} frames`);
   }
   assert.equal(Math.round(rollDistance(rollSpeed(250))), 250);
+});
+
+test('a spilled ARTIFACT glides much further for the same launch speed', () => {
+  const coast = (spill) => {
+    const ball = { x: 100, y: 200, vx: 360, vy: 0, active: true, spill };
+    for (let frame = 0; frame < 600; frame += 1) rollBalls([ball], [], step);
+    return ball.x - 100;
+  };
+  // Same push, so the spill is no faster - it just carries well out from the
+  // GOAL instead of stopping beside it.
+  assert.ok(coast(true) > coast(false) * 2.5);
+  assert.ok(coast(true) > 260, `spill only reached ${coast(true).toFixed(0)}`);
 });
 
 test('balls receive a bump, settle and stay finite at exact overlaps', () => {
