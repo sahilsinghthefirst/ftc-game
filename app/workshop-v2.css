@@ -359,10 +359,11 @@
   gap: 3px;
   padding: 8px 10px;
   border-left: 3px solid #d94c2a;
-  background: rgba(250, 247, 238, 0.86);
+  /* Solid rather than blurred: a blur here would be recomputed every time
+     the 3D view under it redraws. */
+  background: rgba(250, 247, 238, 0.95);
   color: #2d3a3f;
   pointer-events: none;
-  backdrop-filter: blur(5px);
 }
 
 .three-view-label span {

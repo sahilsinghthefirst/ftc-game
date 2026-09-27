@@ -41,10 +41,10 @@ test('An empty robot is guided to the nearest ARTIFACT it can take', () => {
   assert.equal(playerTarget(state, loadout).id, 1);
 });
 
-test('A PurpleSort robot is guided past greens to a purple', () => {
+test('A PurpleSort robot is guided past yellows to a purple', () => {
   const state = world();
   state.player.carried = [];
-  // The green is nearer, but the sorter would drive straight over it.
+  // The yellow is nearer, but the sorter would drive straight over it.
   state.pieces[0].color = 'G';
   state.pieces[1].color = 'P';
   const target = playerTarget(state, { ...loadout, collect: 'sorter' });
@@ -74,15 +74,15 @@ test('Returning to base still takes priority in the final ten seconds', () => {
 
 test('The goal tips at a flat ten, whatever is lying on the mats', () => {
   assert.equal(GOAL_TIP_AT, 10);
-  // Reachable both ways: seven purples clear it, so do ten greens.
+  // Reachable both ways: seven purples clear it, so do ten yellows.
   const purples = Array(7)
     .fill('P')
     .reduce((t, c) => t + tipValue(c), 0);
-  const greens = Array(10)
+  const yellows = Array(10)
     .fill('G')
     .reduce((t, c) => t + tipValue(c), 0);
   assert.ok(purples >= GOAL_TIP_AT);
-  assert.ok(greens >= GOAL_TIP_AT);
+  assert.ok(yellows >= GOAL_TIP_AT);
   // And the field holds far more than one GOAL needs, so a tip is never the
   // last thing that can happen in a match.
   assert.ok(
@@ -101,7 +101,7 @@ test('Purple ARTIFACTS are worth more but eat more storage', () => {
   assert.equal(artifactSpace('G', 'stackpack'), 1);
   assert.equal(artifactSpace('G', BIG_ARTIFACT_STORAGE), 1);
 
-  // The four-slot indexer takes two purples, or a purple and two greens.
+  // The four-slot indexer takes two purples, or a purple and two yellows.
   assert.equal(carryCapacity('pocket'), 4);
   assert.equal(canCarry(['P'], 'P', 'pocket'), true);
   assert.equal(canCarry(['P', 'P'], 'G', 'pocket'), false);

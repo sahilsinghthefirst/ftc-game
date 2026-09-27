@@ -44,6 +44,8 @@ import {
   tipValue,
   intakeTurnRate,
   scoreReach,
+  scoreProfile,
+  canFire,
   shoveResist,
   strafeFactor,
   topSpeed,
@@ -153,8 +155,8 @@ type Hud = {
   goalLoad: number;
 };
 
-const MATCH_TIME = 75;
-// Purple ARTIFACTS count 1.5 toward a tip and greens 1, up to this bar.
+const MATCH_TIME = 60;
+// Purple ARTIFACTS count 1.5 toward a tip and yellows 1, up to this bar.
 const tipAt = GOAL_TIP_AT;
 export const PURPLE_BALL_RADIUS = 18;
 
@@ -261,11 +263,44 @@ function emitBurst(
 
 // Move ARTIFACTS a robot was carrying into its GOAL. They stay off the mats,
 // but they now belong to the GOAL rather than to the robot.
-function storeInGoal(world: World, side: 'player' | 'bot', count: number) {
-  const held = world.pieces.filter(
-    (piece) => !piece.active && piece.collector === side && !piece.stored,
+// The ARTIFACT of a given colour a robot is holding, if any.
+function heldPiece(world: World, side: 'player' | 'bot', color: PieceColor) {
+  return world.pieces.find(
+    (piece) =>
+      !piece.active &&
+      piece.collector === side &&
+      !piece.stored &&
+      !piece.release &&
+      piece.color === color,
   );
-  for (const piece of held.slice(0, count)) piece.stored = side;
+}
+
+function storeInGoal(
+  world: World,
+  side: 'player' | 'bot',
+  colors: PieceColor[],
+) {
+  for (const color of colors) {
+    const piece = heldPiece(world, side, color);
+    if (piece) piece.stored = side;
+  }
+}
+
+// A shot that bounces off the rim: the ARTIFACT comes straight back out of
+// the GOAL and rolls onto the mats instead of counting.
+function bounceOut(world: World, side: 'player' | 'bot', color: PieceColor) {
+  const piece = heldPiece(world, side, color);
+  if (!piece) return;
+  const goal = side === 'player' ? BLUE_GOAL : RED_GOAL;
+  const [shot] = spillPlan(goal, 1);
+  piece.release = {
+    delay: 0,
+    x: shot.x,
+    y: shot.y,
+    // A bounce, not a spill: it drops off the rim and rolls a short way.
+    vx: shot.vx * 0.5,
+    vy: shot.vy * 0.5,
+  };
 }
 
 // A GOAL tips over: it scores once, then dumps everything it held back onto
@@ -327,7 +362,7 @@ function releaseSpills(world: World, dt: number) {
       world,
       piece.x,
       piece.y,
-      piece.color === 'P' ? '#b977ff' : '#b9f54b',
+      piece.color === 'P' ? '#b977ff' : '#f7d948',
     );
   }
 }
@@ -363,7 +398,7 @@ export function GameArena({
     playerScore: 0,
     botScore: 0,
     carried: 0,
-    capacity: 2,
+    capacity: carryCapacity(selected.carry),
     prompt: 'Drive to an ARTIFACT',
     botIntent: 'Scanning the field',
     finalSeconds: false,
@@ -393,22 +428,19 @@ export function GameArena({
   const playerStrafe = strafeFactor(selected.drive);
   // How close the robot has to get to load the GOAL: what the lift reaches,
   // plus whatever the scoring tool can throw.
-  const scoreRadius = scoreReach(selected.reach, selected.score);
+  const scoreRadius = scoreReach(selected.reach);
+  // How the scoring tool loads: its reload, batch size and miss chance.
+  const {
+    cycle: scoreCycle,
+    batch: scoreBatch,
+    miss: scoreMiss,
+  } = scoreProfile(selected.score);
   // Drivetrain speed, slowed by a heavy collector or lift and by Auto Align.
   const speed = topSpeed(selected);
   // The Handling trait shown in the workshop is the number that drives here, so
   // a heavy build feels sluggish off the line and slides further when released.
   const { acceleration, braking } = handlingProfile(handling);
   const alignTolerance = selected.assist === 'align' ? 20 : 0;
-  // Seconds between loads, set by the scoring tool.
-  const scoreDelay =
-    selected.score === 'burst'
-      ? 0.15
-      : selected.score === 'flywheel'
-        ? 0.28
-        : selected.score === 'tiptray'
-          ? 1.1
-          : 0.5;
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -561,24 +593,35 @@ export function GameArena({
         .sort((a, b) => distance(world.player, a) - distance(world.player, b));
       if (action && world.player.cooldown <= 0) {
         if (nearGoal && world.player.carried.length > 0) {
-          const scoredColors =
-            selected.score === 'tiptray'
-              ? world.player.carried.splice(0)
-              : [world.player.carried.shift()!];
-          scoredColors.forEach((color, index) => {
-            world.scored += 1;
-            world.playerGoal += tipValue(color);
-            emitBurst(
-              world,
-              BLUE_GOAL.x + 30,
-              BLUE_GOAL.y + index * 22,
-              color === 'P' ? '#b977ff' : '#b9f54b',
-              `${world.playerGoal}/${tipAt}`,
-            );
-          });
-          storeInGoal(world, 'player', scoredColors.length);
-          if (goalTips(world.playerGoal)) tipGoal(world, 'player');
-          world.player.cooldown = scoreDelay;
+          // A tool that needs a standstill simply does not fire on the move.
+          const moving = Math.hypot(world.player.vx, world.player.vy);
+          if (canFire(selected.score, moving)) {
+            const loaded =
+              scoreBatch === 'all'
+                ? world.player.carried.splice(0)
+                : [world.player.carried.shift()!];
+            const made: PieceColor[] = [];
+            loaded.forEach((color, index) => {
+              if (Math.random() < scoreMiss) {
+                bounceOut(world, 'player', color);
+                emitBurst(world, BLUE_GOAL.x, BLUE_GOAL.y, '#f6d68d', 'MISS');
+                return;
+              }
+              made.push(color);
+              world.scored += 1;
+              world.playerGoal += tipValue(color);
+              emitBurst(
+                world,
+                BLUE_GOAL.x + 30,
+                BLUE_GOAL.y + index * 22,
+                color === 'P' ? '#b977ff' : '#f7d948',
+                `${world.playerGoal}/${tipAt}`,
+              );
+            });
+            storeInGoal(world, 'player', made);
+            if (goalTips(world.playerGoal)) tipGoal(world, 'player');
+            world.player.cooldown = scoreCycle;
+          }
         } else if (inReach.length > 0) {
           // A grabber can close on more than one at a time, so long as they
           // are both in reach and there is storage for them.
@@ -596,7 +639,7 @@ export function GameArena({
               world,
               piece.x,
               piece.y,
-              piece.color === 'P' ? '#b977ff' : '#b9f54b',
+              piece.color === 'P' ? '#b977ff' : '#f7d948',
             );
           }
           if (taken.length > 0) {
@@ -632,7 +675,7 @@ export function GameArena({
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
           if (targetPiece) {
             world.botTarget = targetPiece;
-            world.botIntent = `Collecting ${targetPiece.color === 'P' ? 'purple' : 'green'}`;
+            world.botIntent = `Collecting ${targetPiece.color === 'P' ? 'purple' : 'yellow'}`;
           }
         }
       }
@@ -679,10 +722,10 @@ export function GameArena({
             world,
             RED_GOAL.x - 30,
             RED_GOAL.y,
-            color === 'P' ? '#b977ff' : '#b9f54b',
+            color === 'P' ? '#b977ff' : '#f7d948',
             `${world.botGoal}/${tipAt}`,
           );
-          storeInGoal(world, 'bot', 1);
+          storeInGoal(world, 'bot', [color]);
           if (goalTips(world.botGoal)) tipGoal(world, 'bot');
         } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
@@ -697,7 +740,7 @@ export function GameArena({
               world,
               piece.x,
               piece.y,
-              piece.color === 'P' ? '#b977ff' : '#b9f54b',
+              piece.color === 'P' ? '#b977ff' : '#f7d948',
             );
           }
         }
@@ -792,7 +835,12 @@ export function GameArena({
               ? 'Drive to an ARTIFACT'
               : 'No ARTIFACTS left on the field';
         if (nearGoal && target?.kind === 'goal')
-          prompt = 'Hold ACTION to score';
+          prompt = canFire(
+            selected.score,
+            Math.hypot(world.player.vx, world.player.vy),
+          )
+            ? 'Hold ACTION to score'
+            : 'Stop to score';
         else if (
           nearest &&
           distance(world.player, nearest) <= pickupRadius &&
@@ -841,7 +889,9 @@ export function GameArena({
     difficulty,
     alignTolerance,
     pickupRadius,
-    scoreDelay,
+    scoreCycle,
+    scoreBatch,
+    scoreMiss,
     scoreRadius,
     selected,
     speed,

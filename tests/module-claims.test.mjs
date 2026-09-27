@@ -14,8 +14,11 @@ import {
   driveSpeed,
   intakeTurnRate,
   reachProfile,
+  STOPPED_SPEED,
+  assistGuides,
+  canFire,
+  scoreProfile,
   scoreReach,
-  scoreReachBonus,
   shoveResist,
   strafeFactor,
   topSpeed,
@@ -50,7 +53,8 @@ const byId = Object.fromEntries(modules.map((m) => [m.id, m]));
 const inCategory = (category) => modules.filter((m) => m.category === category);
 
 const drives = ['comet', 'trailblazer', 'orbit', 'anchor'];
-const scoreCycle = { burst: 0.15, flywheel: 0.28, truegate: 0.5, tiptray: 1.1 };
+const scorers = ['burst', 'truegate', 'tiptray', 'flywheel'];
+const assists = ['range', 'align', 'pathfinder'];
 // A plain build to change one part at a time against.
 const base = {
   drive: 'comet',
@@ -63,7 +67,7 @@ const base = {
 
 test('every part in the workshop is one the match loop knows about', () => {
   assert.equal(modules.length, 22, 'unexpected number of parts');
-  for (const id of [...drives, ...REACH_ORDER, ...Object.keys(scoreCycle)])
+  for (const id of [...drives, ...REACH_ORDER, ...scorers, ...assists])
     assert.ok(byId[id], `${id} missing`);
   assert.equal(inCategory('drive').length, 4);
   assert.equal(inCategory('collect').length, 4);
@@ -174,7 +178,7 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
     jaws.dragFor,
   );
 
-  // PurpleSort: "Drives straight past every green".
+  // PurpleSort: "Drives straight past every yellow".
   assert.equal(sorter.takes, 'P');
   assert.equal(collectorTakes('sorter', 'P'), true);
   assert.equal(collectorTakes('sorter', 'G'), false);
@@ -257,24 +261,78 @@ test('cards that promise a mechanic actually have one behind them', () => {
   // Orbit Omni gives the most ground, which is what "skates" means in contact.
   assert.equal(Math.min(...resists), shoveResist('orbit'));
 
-  // Vector Flywheel: "Loads the GOAL at range" - it is the only scoring tool
-  // that adds reach of its own.
-  assert.ok(scoreReachBonus('flywheel') > 0);
-  assert.equal(
-    scoreReach('elevator', 'flywheel'),
-    scoreReach('elevator', 'burst') + scoreReachBonus('flywheel'),
-  );
-  for (const id of ['burst', 'truegate', 'tiptray'])
-    assert.equal(scoreReachBonus(id), 0);
-
   // Auto Align: "Costs real top speed".
   assert.ok(topSpeed({ ...base, assist: 'align' }) < topSpeed(base));
 });
 
-test('scoring cards match their cycle times', () => {
-  // Burst Feeder: "Fills the GOAL fastest". TipTray: "Very long reload".
-  assert.equal(Math.min(...Object.values(scoreCycle)), scoreCycle.burst);
-  assert.equal(Math.max(...Object.values(scoreCycle)), scoreCycle.tiptray);
+test('reach decides where you load from, scoring decides how', () => {
+  // Loading range comes from the lift alone - no scoring tool changes it.
+  assert.equal(scoreReach.length, 1);
+  for (const id of REACH_ORDER)
+    assert.equal(scoreReach(id), reachProfile(id).radius);
+
+  const burst = scoreProfile('burst');
+  const gate = scoreProfile('truegate');
+  const tray = scoreProfile('tiptray');
+  const fly = scoreProfile('flywheel');
+  const cycles = scorers.map((id) => scoreProfile(id).cycle);
+
+  // Burst Feeder: "Fills the GOAL fastest" / "Only fires with the robot
+  // stopped".
+  assert.equal(Math.min(...cycles), burst.cycle);
+  assert.equal(burst.needsStop, true);
+  assert.equal(canFire('burst', 0), true);
+  assert.equal(canFire('burst', STOPPED_SPEED + 1), false);
+
+  // TrueGate Indexer: "Loads on the move and never misses" / "Slow between
+  // shots".
+  assert.equal(gate.needsStop, false);
+  assert.equal(gate.miss, 0);
+  assert.equal(canFire('truegate', 300), true);
+  assert.ok(gate.cycle > fly.cycle && gate.cycle > burst.cycle);
+
+  // TipTray: "Empties your storage in one motion" / "Must stop, then a very
+  // long reload".
+  assert.equal(tray.batch, 'all');
+  assert.equal(tray.needsStop, true);
+  assert.equal(Math.max(...cycles), tray.cycle);
+
+  // Vector Flywheel: "Quick shots on the move" / "One shot in four bounces
+  // out".
+  assert.equal(fly.needsStop, false);
+  assert.equal(fly.miss, 0.25);
+  assert.ok(fly.cycle < gate.cycle);
+
+  // Only the flywheel ever misses, and only the tray loads more than one.
+  for (const id of scorers) {
+    if (id !== 'flywheel') assert.equal(scoreProfile(id).miss, 0);
+    if (id !== 'tiptray') assert.equal(scoreProfile(id).batch, 'one');
+  }
+  assert.match(byId.burst.tradeoff, /stopped/i);
+  assert.match(byId.tiptray.tradeoff, /stop/i);
+  assert.match(byId.flywheel.tradeoff, /one shot in four/i);
+});
+
+test('each assist guides a different part of the match, none all of it', () => {
+  const kinds = ['piece', 'goal', 'base'];
+  // Pathfinder: "Draws the route to the next ARTIFACT, and home to BASE at
+  // the end" / "No help at the GOAL".
+  assert.deepEqual(
+    kinds.filter((kind) => assistGuides('pathfinder', kind)),
+    ['piece', 'base'],
+  );
+  // Auto Align: "Points the way to the GOAL".
+  assert.deepEqual(
+    kinds.filter((kind) => assistGuides('align', kind)),
+    ['goal'],
+  );
+  // Range Finder rings the GOAL instead of drawing a route.
+  assert.deepEqual(
+    kinds.filter((kind) => assistGuides('range', kind)),
+    [],
+  );
+  // Without a guiding assist, nothing on the field points anywhere.
+  for (const kind of kinds) assert.equal(assistGuides('none', kind), false);
 });
 
 test('no card still describes the old ruleset', () => {

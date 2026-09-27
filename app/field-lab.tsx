@@ -231,7 +231,7 @@ const modules: Module[] = [
     code: 'INT-04',
     blurb: 'A funnel shaped to swallow only the big purple ARTIFACTS.',
     strength: 'Fills the GOAL fastest at 1.5 a time',
-    tradeoff: 'Drives straight past every green',
+    tradeoff: 'Drives straight past every yellow',
     traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
     power: 2,
@@ -335,7 +335,7 @@ const modules: Module[] = [
     code: 'SCR-01',
     blurb: 'Fires ARTIFACTS into the GOAL back to back.',
     strength: 'Fills the GOAL fastest',
-    tradeoff: 'Needs careful aim',
+    tradeoff: 'Only fires with the robot stopped',
     traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 3 },
     weight: 2,
     power: 5,
@@ -347,7 +347,7 @@ const modules: Module[] = [
     name: 'TrueGate Indexer',
     code: 'SCR-02',
     blurb: 'Drops exactly one ARTIFACT per press.',
-    strength: 'Never double-feeds',
+    strength: 'Loads on the move and never misses',
     tradeoff: 'Slow between shots',
     traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 1 },
     weight: 2,
@@ -361,7 +361,7 @@ const modules: Module[] = [
     code: 'SCR-03',
     blurb: 'Tips the whole load into the GOAL at once.',
     strength: 'Empties your storage in one motion',
-    tradeoff: 'Very long reload',
+    tradeoff: 'Must stop, then a very long reload',
     traits: { speed: 0, handling: 1, control: 0, collect: 0, score: 2 },
     weight: 2,
     power: 2,
@@ -372,9 +372,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'Vector Flywheel',
     code: 'SCR-04',
-    blurb: 'Launches ARTIFACTS from across the mats.',
-    strength: 'Loads the GOAL at range',
-    tradeoff: 'Drinks power and rocks the robot',
+    blurb: 'Launches ARTIFACTS into the GOAL without slowing down.',
+    strength: 'Quick shots on the move',
+    tradeoff: 'One shot in four bounces out',
     traits: { speed: 1, handling: -2, control: -2, collect: 0, score: 2 },
     weight: 3,
     power: 6,
@@ -385,7 +385,7 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Range Finder',
     code: 'SNS-02',
-    blurb: 'Shows when the GOAL is close enough to load.',
+    blurb: 'Rings the GOAL and lights up once you are close enough to load.',
     strength: 'Never wastes a trip',
     tradeoff: 'Only useful at the GOAL',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
@@ -398,8 +398,8 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Auto Align',
     code: 'SNS-03',
-    blurb: 'Squares the robot up to the GOAL for you.',
-    strength: 'Wide aim assist',
+    blurb: 'Points the way to the GOAL and widens your aim.',
+    strength: 'Guides every trip to the GOAL',
     tradeoff: 'Costs real top speed',
     traits: { speed: -3, handling: 1, control: 3, collect: 0, score: 1 },
     weight: 1,
@@ -411,7 +411,7 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Pathfinder',
     code: 'SNS-04',
-    blurb: 'Draws the quickest route to the next ARTIFACT.',
+    blurb: 'Draws the route to the next ARTIFACT, and home to BASE at the end.',
     strength: 'Keeps your cycles short',
     tradeoff: 'No help at the GOAL',
     traits: { speed: 1, handling: 3, control: 1, collect: 0, score: 0 },
@@ -640,7 +640,7 @@ function Briefing({
           <div className="tip-brief">
             <div>
               <p className="eyebrow">TIPPING THE GOAL</p>
-              <strong>PURPLE {purpleValue} · GREEN 1</strong>
+              <strong>PURPLE {purpleValue} · YELLOW 1</strong>
             </div>
             <p>
               <b>{tipPoints}</b> points at {tipAt}
@@ -687,7 +687,7 @@ function Briefing({
             START MATCH <Play />
           </Button>
           <p className="start-note">
-            75 seconds · Pause anytime · WASD or arrows
+            60 seconds · Pause anytime · WASD or arrows
           </p>
         </aside>
       </div>
@@ -838,7 +838,11 @@ export function FieldLab() {
   );
   const [blueprint, setBlueprint] = useState('balanced');
   const [dragging, setDragging] = useState<Module | null>(null);
+  // Where the dragged part first appears. After that the ghost is moved
+  // straight in the DOM, so a drag never re-renders the whole workshop on
+  // every pointer move - which a school laptop would feel as lag.
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const ghostRef = useRef<HTMLDivElement>(null);
   const [dropHot, setDropHot] = useState(false);
   // The part most recently let go of somewhere other than the robot. `nonce`
   // changes on every miss so the warning animations replay each time.
@@ -1033,8 +1037,15 @@ export function FieldLab() {
       ) > 7
     )
       current.moved = true;
-    setDragPosition({ x: event.clientX, y: event.clientY });
-    setDropHot(pointIsOverStage(event.clientX, event.clientY));
+    // Read layout first, then write, so the browser lays out once.
+    const over = pointIsOverStage(event.clientX, event.clientY);
+    const ghost = ghostRef.current;
+    if (ghost) {
+      ghost.style.left = `${event.clientX}px`;
+      ghost.style.top = `${event.clientY}px`;
+    }
+    // Only re-renders when the drop highlight actually switches.
+    setDropHot(over);
   };
 
   const finishPartDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1544,7 +1555,7 @@ export function FieldLab() {
           >
             <span>
               <strong>Take Atlas to the field</strong>
-              <small>75 seconds · versus Scout-7</small>
+              <small>60 seconds · versus Scout-7</small>
             </span>
             <Crosshair aria-hidden="true" />
           </Button>
@@ -1553,6 +1564,7 @@ export function FieldLab() {
 
       {dragging && (
         <div
+          ref={ghostRef}
           className={`part-drag-ghost ${dropHot ? 'is-over-stage' : ''}`}
           style={{ left: dragPosition.x, top: dragPosition.y }}
           aria-hidden="true"

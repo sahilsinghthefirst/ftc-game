@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AssemblyCategory } from './assembly-bay';
+import { mergeStaticMeshes } from './merge-static';
 export type MovingParts = {
   wheels: THREE.Group[];
   intake: THREE.Group | null;
@@ -28,14 +29,26 @@ const palette = {
   wireBlack: 0x262b2e,
 };
 
+// Colours that are bare metal on a real robot: extrusion, plates and bolts.
+const METAL_COLORS = new Set([
+  palette.aluminum,
+  palette.aluminumDark,
+  0xd7dcde,
+]);
+
+// Surface finish follows what the part is made of: brushed aluminum, rubber
+// tread, or moulded plastic for everything else. A part that asks for a
+// specific finish still gets it.
 function material(
   color: number,
   options: Partial<THREE.MeshStandardMaterialParameters> = {},
 ) {
+  const metal = METAL_COLORS.has(color);
+  const rubber = color === palette.rubber;
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.45,
-    metalness: 0.2,
+    roughness: metal ? 0.3 : rubber ? 0.9 : 0.42,
+    metalness: metal ? 0.9 : 0.04,
     ...options,
   });
 }
@@ -68,8 +81,11 @@ function cylinder(
   color: number,
   radialSegments = 24,
 ) {
+  // Small parts read as round with far fewer sides than big ones; any more
+  // only costs vertices on a school laptop's graphics chip.
+  const sides = Math.max(6, Math.min(radialSegments, Math.round(radius * 60)));
   const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, length, radialSegments),
+    new THREE.CylinderGeometry(radius, radius, length, sides),
     material(color),
   );
   mesh.castShadow = true;
@@ -158,7 +174,7 @@ function barrelGeometry(length: number, radius: number) {
   ];
   const geometry = new THREE.LatheGeometry(
     profile.map(([r, y]) => new THREE.Vector2(r * radius, y * length)),
-    14,
+    10,
   );
   barrelCache.set(key, geometry);
   return geometry;
@@ -836,9 +852,12 @@ export function disposeObject(object: THREE.Object3D) {
         if (value instanceof THREE.Texture) textures.add(value);
     });
   });
-  geometries.forEach((item) => item.dispose());
-  textures.forEach((item) => item.dispose());
-  materialSet.forEach((item) => item.dispose());
+  // Resources marked shared (the ARTIFACT meshes) outlive any one object.
+  const owned = (item: { userData: Record<string, unknown> }) =>
+    !item.userData.shared;
+  geometries.forEach((item) => owned(item) && item.dispose());
+  textures.forEach((item) => owned(item) && item.dispose());
+  materialSet.forEach((item) => owned(item) && item.dispose());
 }
 
 // Where each part sits on its mount rail. Every robot uses the standard
@@ -879,6 +898,21 @@ export function createRobotModel(selected: Record<string, string>) {
       child.userData.category = group.userData.category;
     });
   }
+  // Fuse the hundreds of fixed parts into a few meshes per moving piece. The
+  // part groups, wheels, spinning rollers, intake, lift and scorer all keep
+  // moving as before.
+  const rollers: THREE.Object3D[] = [];
+  root.traverse((child) => {
+    if (child.userData.roller) rollers.push(child);
+  });
+  mergeStaticMeshes(root, [
+    ...Object.values(groups),
+    ...moving.wheels,
+    ...rollers,
+    ...[moving.intake, moving.lift, moving.scorer].filter(
+      (part): part is THREE.Group => part !== null,
+    ),
+  ]);
   return { root, groups, moving };
 }
 export type RobotModel = ReturnType<typeof createRobotModel>;

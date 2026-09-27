@@ -10,6 +10,8 @@ import {
   disposeObject,
   type RobotModel,
 } from './robot-model';
+import { mergeStaticMeshes } from './merge-static';
+import { createRenderPipeline } from './render-pipeline';
 import { setupScene, workshopRoom, ring } from './scene-kit';
 
 type Props = {
@@ -41,6 +43,8 @@ export function Robot3DBay(props: Props) {
   const modelRef = useRef<RobotModel | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  // Asks the workshop view for a fresh frame (it only draws on change).
+  const invalidateRef = useRef<() => void>(() => {});
   const propsRef = useRef(props);
   const modeRef = useRef(false);
   const [exploded, setExploded] = useState(false);
@@ -68,8 +72,13 @@ export function Robot3DBay(props: Props) {
     }
     const { scene, renderer, environment } = kit;
     sceneRef.current = scene;
-    workshopRoom(scene);
+    // The pit never moves, so its many small parts are fused into a few meshes.
+    const room = new THREE.Group();
+    workshopRoom(room);
+    mergeStaticMeshes(room, []);
+    scene.add(room);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    const pipeline = createRenderPipeline(renderer, scene, camera);
     camera.position.set(10.5, 7.5, 12.5);
     cameraRef.current = camera;
     const controls = new OrbitControls(camera, canvas);
@@ -82,6 +91,16 @@ export function Robot3DBay(props: Props) {
     controls.maxPolarAngle = 1.45;
     controls.enablePan = false;
     controlsRef.current = controls;
+    // The workshop only redraws when something on screen changes: the camera
+    // moves, a part snaps or slides, the selection changes, or the view is
+    // resized. Sitting on the build screen then costs a school laptop's
+    // graphics chip nothing at all.
+    let dirty = true;
+    const invalidate = () => {
+      dirty = true;
+    };
+    invalidateRef.current = invalidate;
+    controls.addEventListener('change', invalidate);
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const marker = ring(0.55, 0xf2bc42, 0.04);
     scene.add(marker);
@@ -156,13 +175,10 @@ export function Robot3DBay(props: Props) {
     canvas.addEventListener('keydown', keydown);
     const resize = () => {
       const rect = canvas.parentElement!.getBoundingClientRect();
-      renderer.setSize(
-        Math.max(1, rect.width),
-        Math.max(1, rect.height),
-        false,
-      );
+      pipeline.setSize(rect.width, rect.height);
       camera.aspect = rect.width / Math.max(1, rect.height);
       camera.updateProjectionMatrix();
+      invalidate();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(canvas.parentElement!);
@@ -172,6 +188,13 @@ export function Robot3DBay(props: Props) {
       elapsed = 0;
     let snapCategory: string | null = null,
       snapTime = 0;
+    // What the marker last showed, so a change of selection redraws.
+    let shownActive: string | null = null;
+    let shownDragging = false;
+    let shownExploded = false;
+    const goal = new THREE.Vector3();
+    const bounds = new THREE.Box3();
+    const center = new THREE.Vector3();
     const loop = (now: number) => {
       const dt = Math.min((now - previous) / 1000, 0.05);
       previous = now;
@@ -188,43 +211,63 @@ export function Robot3DBay(props: Props) {
           snapCategory = current.snappingCategory;
           snapTime = elapsed;
         }
+        let moved = false;
         for (const [key, group] of Object.entries(model.groups)) {
           const category = key as AssemblyCategory;
-          const home = group.userData.home as THREE.Vector3;
-          const target = home.clone();
-          if (explodedNow) target.add(offsets[category]);
+          goal.copy(group.userData.home as THREE.Vector3);
+          if (explodedNow) goal.add(offsets[category]);
           if (snapCategory === key && !explodedNow && !motion.matches)
-            target.y += Math.max(0, 1 - (elapsed - snapTime) / 0.6) ** 2 * 3;
+            goal.y += Math.max(0, 1 - (elapsed - snapTime) / 0.6) ** 2 * 3;
+          if (group.position.distanceToSquared(goal) < 1e-8) continue;
           group.position.lerp(
-            target,
+            goal,
             motion.matches ? 1 : 1 - Math.exp(-12 * dt),
           );
+          moved = true;
         }
-        const active = model.groups[current.activeCategory];
-        const bounds = new THREE.Box3().setFromObject(active);
-        const center = bounds.getCenter(new THREE.Vector3());
-        marker.position.set(
-          center.x,
-          Math.max(0.06, bounds.min.y - 0.04),
-          center.z,
-        );
-        marker.scale.setScalar(current.draggingCategory ? 1.5 : 1);
-        marker.visible = !explodedNow;
+        const dragging = Boolean(current.draggingCategory);
+        if (
+          moved ||
+          current.activeCategory !== shownActive ||
+          dragging !== shownDragging ||
+          explodedNow !== shownExploded
+        ) {
+          shownActive = current.activeCategory;
+          shownDragging = dragging;
+          shownExploded = explodedNow;
+          bounds.setFromObject(model.groups[current.activeCategory]);
+          bounds.getCenter(center);
+          marker.position.set(
+            center.x,
+            Math.max(0.06, bounds.min.y - 0.04),
+            center.z,
+          );
+          marker.scale.setScalar(dragging ? 1.5 : 1);
+          marker.visible = !explodedNow;
+          dirty = true;
+        }
       }
+      // Damping keeps the camera gliding after a drag; that fires 'change'.
       controls.update();
-      renderer.render(scene, camera);
+      if (dirty) {
+        dirty = false;
+        pipeline.render();
+      }
       frame = requestAnimationFrame(loop);
     };
     frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      controls.removeEventListener('change', invalidate);
       controls.dispose();
+      invalidateRef.current = () => {};
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('keydown', keydown);
       disposeObject(scene);
       environment.dispose();
+      pipeline.dispose();
       renderer.dispose();
       sceneRef.current = null;
       cameraRef.current = null;
@@ -243,6 +286,7 @@ export function Robot3DBay(props: Props) {
     const model = createRobotModel(props.selected);
     scene.add(model.root);
     modelRef.current = model;
+    invalidateRef.current();
   }, [props.selected]);
 
   const setCamera = (mode: string) => {

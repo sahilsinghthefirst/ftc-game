@@ -1,7 +1,17 @@
 import * as THREE from 'three';
 import { createRobotModel, disposeObject } from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeStaticMeshes } from './merge-static';
+import { createRenderPipeline } from './render-pipeline';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { label, place, ring, setupScene, solid } from './scene-kit';
+import {
+  blockWall,
+  concreteFloor,
+  eventCarpet,
+  ribbedPlank,
+  treadPlate,
+} from './textures';
 import {
   BLUE_BASE_ZONE,
   BLUE_GOAL,
@@ -14,7 +24,7 @@ import {
   zoneCenter,
 } from './field';
 import type { World } from './game-arena';
-import { playerTarget, scoreReach } from './match-guidance';
+import { assistGuides, playerTarget, scoreReach } from './match-guidance';
 
 export type CameraMode = 'arena' | 'follow';
 const SCALE = 0.02;
@@ -26,41 +36,200 @@ const blue = 0x359be5,
 const MAT_TOP = 0.155;
 const position = (x: number, z: number, y = 0.08) =>
   new THREE.Vector3((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
+// The same, written into a vector that already exists: the render loop runs
+// every frame, and on a school laptop the garbage from dozens of throwaway
+// vectors a frame turns into visible stutter.
+const toScene = (target: THREE.Vector3, x: number, z: number, y = 0.08) =>
+  target.set((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
+
+// Where the follow camera sits relative to the robot, and where it looks.
+const FOLLOW_HEIGHT = 7.4;
+const FOLLOW_BACK = 9.6;
+const FOLLOW_AHEAD = 2.4;
+
+// Clear polycarbonate perimeter panels: close to invisible head-on, but they
+// pick up the hall's light strips as sharp reflections, the way real field
+// walls do.
+function polycarbonate() {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xdbe9f0,
+    transparent: true,
+    opacity: 0.14,
+    roughness: 0.04,
+    metalness: 0,
+    ior: 1.58,
+    specularIntensity: 1,
+    envMapIntensity: 1.6,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
 
 // Purple ARTIFACTS are the big ones - the same 1.28x the physics uses for
 // their footprint, so what you see matches what you bump into.
 export const PURPLE_SCALE = 1.28;
 
-function artifact(color: string, base = 0.28) {
+const ARTIFACT_RADIUS = 0.28;
+// Height of an ARTIFACT's center when it sits on the mats.
+const restingHeight = (color: string) =>
+  MAT_TOP + (color === 'P' ? ARTIFACT_RADIUS * PURPLE_SCALE : ARTIFACT_RADIUS);
+
+// Every ARTIFACT shares one sphere, one fused pair of seams and one material
+// per colour - built once, sized per ball by scaling. Marked shared so
+// clearing a robot's cargo or finishing a flight never deletes what the rest
+// of the field is still drawing with.
+type BallParts = {
+  sphere: THREE.SphereGeometry;
+  seam: THREE.BufferGeometry;
+  body: Record<string, THREE.Material>;
+  seamColor: Record<string, THREE.Material>;
+  // Lets shadows fall through the holes too.
+  shadow: THREE.MeshDepthMaterial;
+};
+let ballParts: BallParts | null = null;
+
+function share<T extends { userData: Record<string, unknown> }>(item: T) {
+  item.userData.shared = true;
+  return item;
+}
+
+// Angular radius of each hole, and of the darker rim that reads as the
+// thickness of the shell round it.
+const HOLE = 0.22;
+const HOLE_RIM = 0.07;
+
+// The perforated shell of a real ARTIFACT, as two small textures wrapped on a
+// plain sphere: one cuts the holes out, the other darkens each hole's rim.
+// Through a hole you see the inside of the far wall, then the floor, just as
+// with the real ball - and it stays one cheap sphere per ball.
+function perforatedShell() {
+  // Holes in rings, north to south, kept clear of the seam round the middle.
+  const centres: THREE.Vector3[] = [];
+  const ring = (latitude: number, count: number, turn: number) => {
+    for (let i = 0; i < count; i++) {
+      const longitude = turn + (i / count) * Math.PI * 2;
+      const lat = (latitude * Math.PI) / 180;
+      centres.push(
+        new THREE.Vector3(
+          -Math.cos(longitude) * Math.cos(lat),
+          Math.sin(lat),
+          Math.sin(longitude) * Math.cos(lat),
+        ),
+      );
+    }
+  };
+  ring(90, 1, 0);
+  ring(55, 6, 0);
+  ring(22, 8, Math.PI / 8);
+  ring(-22, 8, 0);
+  ring(-55, 6, Math.PI / 6);
+  ring(-90, 1, 0);
+
+  const width = 512;
+  const height = 256;
+  const make = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    return { canvas, ctx, image: ctx.createImageData(width, height) };
+  };
+  const cut = make();
+  const shade = make();
+  const direction = new THREE.Vector3();
+  for (let y = 0; y < height; y++) {
+    // Same mapping as THREE.SphereGeometry's UVs (top row = north pole).
+    const theta = ((y + 0.5) / height) * Math.PI;
+    for (let x = 0; x < width; x++) {
+      const phi = ((x + 0.5) / width) * Math.PI * 2;
+      direction.set(
+        -Math.cos(phi) * Math.sin(theta),
+        Math.cos(theta),
+        Math.sin(phi) * Math.sin(theta),
+      );
+      let nearest = -1;
+      for (const centre of centres)
+        nearest = Math.max(nearest, direction.dot(centre));
+      const angle = Math.acos(Math.min(1, nearest));
+      const i = (y * width + x) * 4;
+      const solid = angle > HOLE ? 255 : 0;
+      cut.image.data[i] = cut.image.data[i + 1] = cut.image.data[i + 2] = solid;
+      cut.image.data[i + 3] = 255;
+      const rim = Math.min(1, Math.max(0, (angle - HOLE) / HOLE_RIM));
+      const tone = Math.round(255 * (0.68 + 0.32 * rim));
+      shade.image.data[i] =
+        shade.image.data[i + 1] =
+        shade.image.data[i + 2] =
+          tone;
+      shade.image.data[i + 3] = 255;
+    }
+  }
+  cut.ctx.putImageData(cut.image, 0, 0);
+  shade.ctx.putImageData(shade.image, 0, 0);
+  const holes = new THREE.CanvasTexture(cut.canvas);
+  const rims = new THREE.CanvasTexture(shade.canvas);
+  rims.colorSpace = THREE.SRGBColorSpace;
+  holes.anisotropy = rims.anisotropy = 4;
+  return { holes: share(holes), rims: share(rims) };
+}
+
+function getBallParts(): BallParts {
+  if (ballParts) return ballParts;
+  const { holes, rims } = perforatedShell();
+  // Satin moulded plastic, like the real ball: a soft sheen rather than a
+  // hard shine. Both faces are drawn so the inside shows through the holes.
+  const body = (color: number) =>
+    share(
+      new THREE.MeshPhysicalMaterial({
+        color,
+        map: rims,
+        alphaMap: holes,
+        alphaTest: 0.5,
+        side: THREE.DoubleSide,
+        roughness: 0.55,
+        metalness: 0,
+        clearcoat: 0.2,
+        clearcoatRoughness: 0.5,
+      }),
+    );
+  const seam = (color: number) =>
+    share(new THREE.MeshStandardMaterial({ color, roughness: 0.6 }));
+  ballParts = {
+    sphere: share(new THREE.SphereGeometry(1, 24, 16)),
+    // The single seam where the two moulded halves meet.
+    seam: share(
+      new THREE.TorusGeometry(0.996, 0.028, 5, 48).rotateX(Math.PI / 2),
+    ),
+    body: { P: body(0x8a4fd6), G: body(0xf2cf2e) },
+    seamColor: { P: seam(0x6a3aae), G: seam(0xb8961a) },
+    shadow: share(
+      new THREE.MeshDepthMaterial({
+        depthPacking: THREE.RGBADepthPacking,
+        alphaMap: holes,
+        alphaTest: 0.5,
+      }),
+    ),
+  };
+  return ballParts;
+}
+
+function artifact(color: string, base = ARTIFACT_RADIUS) {
   const radius = color === 'P' ? base * PURPLE_SCALE : base;
+  const parts = getBallParts();
+  const key = color === 'P' ? 'P' : 'G';
   const group = new THREE.Group();
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 20, 14),
-    new THREE.MeshStandardMaterial({
-      color: color === 'P' ? 0x9156d9 : 0xa4c845,
-      roughness: 0.78,
-      metalness: 0,
-    }),
-  );
+  const mesh = new THREE.Mesh(parts.sphere, parts.body[key]);
+  mesh.customDepthMaterial = parts.shadow;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   group.add(mesh);
-  const seam = new THREE.Mesh(
-    new THREE.TorusGeometry(radius * 0.994, 0.015, 6, 32),
-    new THREE.MeshStandardMaterial({
-      color: color === 'P' ? 0x5b328c : 0x5a7b24,
-      roughness: 0.8,
-    }),
-  );
-  group.add(seam);
-  const second = seam.clone();
-  second.rotation.y = Math.PI / 2;
-  group.add(second);
+  group.add(new THREE.Mesh(parts.seam, parts.seamColor[key]));
+  group.scale.setScalar(radius);
   return group;
 }
 
 function goal(
-  scene: THREE.Scene,
+  scene: THREE.Object3D,
   x: number,
   z: number,
   color: number,
@@ -69,7 +238,21 @@ function goal(
   const root = new THREE.Group();
   root.position.set(x, 0, z);
   scene.add(root);
-  place(root, solid(2.1, 0.2, 1.9, 0x273943, 0.5), 0, 0.14, 0);
+  // Diamond tread-plate base.
+  const tread = treadPlate(3);
+  const plate = new THREE.Mesh(
+    new RoundedBoxGeometry(2.1, 0.2, 1.9, 1, 0.04),
+    new THREE.MeshStandardMaterial({
+      color: 0x55616a,
+      metalness: 0.85,
+      roughness: 0.42,
+      bumpMap: tread.bumpMap,
+      bumpScale: 1.5,
+    }),
+  );
+  plate.castShadow = true;
+  plate.receiveShadow = true;
+  place(root, plate, 0, MAT_TOP + 0.1, 0);
   for (const a of [-0.74, 0.74]) {
     place(root, solid(0.1, 1.65, 0.1, 0xa4b5bf, 0.8), a, 0.94, -0.45);
     const brace = solid(0.09, 1.8, 0.09, 0x566c79, 0.7);
@@ -77,11 +260,13 @@ function goal(
     place(root, brace, a, 0.9, 0.3);
   }
   const funnel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.88, 0.44, 0.67, 8, 1, true),
-    new THREE.MeshStandardMaterial({
+    new THREE.CylinderGeometry(0.88, 0.44, 0.67, 32, 1, true),
+    new THREE.MeshPhysicalMaterial({
       color,
-      metalness: 0.3,
-      roughness: 0.4,
+      metalness: 0,
+      roughness: 0.32,
+      clearcoat: 0.8,
+      clearcoatRoughness: 0.18,
       side: THREE.DoubleSide,
     }),
   );
@@ -102,34 +287,88 @@ function goal(
   return root;
 }
 
-// Soft EVA foam grain, used as a bump map so the mats catch the field lights
-// the way real FTC tiles do.
-function foamTexture() {
-  const foam = document.createElement('canvas');
-  foam.width = foam.height = 128;
-  const ctx = foam.getContext('2d')!;
-  ctx.fillStyle = '#888888';
-  ctx.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 2600; i++) {
-    const shade = 96 + ((i * 37) % 68);
-    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
-    ctx.fillRect(
-      (i * 73) % 128,
-      (Math.floor(i / 128) * 31 + i * 17) % 128,
-      1,
-      1,
-    );
+// Seeded so every load of the field looks the same.
+function seeded(seed: number) {
+  let state = seed;
+  return () => {
+    state = (state * 16807) % 2147483647;
+    return state / 2147483647;
+  };
+}
+
+// EVA foam surface: a fine pebbled grain over a gentle larger-scale wave,
+// turned into a normal map so the mats catch the hall lights the way real FTC
+// tiles do. Built once on a small canvas and tiled.
+function foamNormalMap() {
+  const size = 256;
+  const random = seeded(7);
+  // Height field: the fine raised-diamond non-slip pattern moulded into the
+  // top of an FTC soft tile, over a faint grain so it never looks printed.
+  const height = new Float32Array(size * size);
+  const diamonds = 16;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const fx = ((x / size) * diamonds) % 1;
+      const fy = ((y / size) * diamonds) % 1;
+      const reach = Math.abs(fx - 0.5) + Math.abs(fy - 0.5);
+      // A soft-shouldered diamond: flat top, sloping sides, flat floor.
+      const rise = Math.min(1, Math.max(0, (0.42 - reach) / 0.12));
+      height[y * size + x] = rise * 0.8;
+    }
+  for (const [cells, weight] of [[64, 0.12]] as const) {
+    const grid = Array.from({ length: cells * cells }, random);
+    const step = size / cells;
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const gx = x / step;
+        const gy = y / step;
+        const x0 = Math.floor(gx) % cells;
+        const y0 = Math.floor(gy) % cells;
+        const x1 = (x0 + 1) % cells;
+        const y1 = (y0 + 1) % cells;
+        const fx = gx - Math.floor(gx);
+        const fy = gy - Math.floor(gy);
+        const sx = fx * fx * (3 - 2 * fx);
+        const sy = fy * fy * (3 - 2 * fy);
+        const top =
+          grid[y0 * cells + x0] * (1 - sx) + grid[y0 * cells + x1] * sx;
+        const bottom =
+          grid[y1 * cells + x0] * (1 - sx) + grid[y1 * cells + x1] * sx;
+        height[y * size + x] += (top * (1 - sy) + bottom * sy) * weight;
+      }
   }
-  const texture = new THREE.CanvasTexture(foam);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const image = ctx.createImageData(size, size);
+  const at = (x: number, y: number) =>
+    height[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 3;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * 3;
+      const length = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      image.data[i] = ((-dx / length) * 0.5 + 0.5) * 255;
+      image.data[i + 1] = ((-dy / length) * 0.5 + 0.5) * 255;
+      image.data[i + 2] = ((1 / length) * 0.5 + 0.5) * 255;
+      image.data[i + 3] = 255;
+    }
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(6, 6);
+  texture.repeat.set(1.2, 1.2);
+  texture.anisotropy = 4;
   return texture;
 }
 
-// One interlocking foam mat: a square with two puzzle tabs per edge. `edges`
-// runs [back, right, front, left]; 1 pushes tabs outward, -1 cuts them inward,
-// and 0 leaves the edge straight for the outside of the field.
-function matShape(size: number, tab: number, edges: number[]) {
+// One FTC soft tile: a square whose shared edges lock into their neighbours
+// with a row of small trapezoid teeth, and whose outside edges are straight
+// border strips. `edges` runs [back, right, front, left]; +1 and -1 give
+// opposite tooth patterns (so neighbouring tiles fit together), 0 a straight
+// edge.
+const TEETH = 11;
+function matShape(size: number, depth: number, edges: number[]) {
   const half = size / 2;
   const corners: [number, number][] = [
     [-half, -half],
@@ -147,37 +386,50 @@ function matShape(size: number, tab: number, edges: number[]) {
       shape.lineTo(toX, toY);
       continue;
     }
-    // Unit vector along the edge. The corners wind counter-clockwise, so a
-    // counter-clockwise half circle bulges out of the tile and a clockwise one
-    // bites into it.
+    // Along the edge, and straight out of the tile (corners wind
+    // counter-clockwise, so outward is the edge direction turned clockwise).
     const ux = Math.sign(toX - fromX);
     const uy = Math.sign(toY - fromY);
-    const start = Math.atan2(-uy, -ux);
-    for (const along of [0.28, 0.72]) {
-      const cx = fromX + (toX - fromX) * along;
-      const cy = fromY + (toY - fromY) * along;
-      shape.lineTo(cx - ux * tab, cy - uy * tab);
-      shape.absarc(cx, cy, tab, start, start + Math.PI, direction < 0);
+    const nx = uy;
+    const ny = -ux;
+    const step = size / TEETH;
+    const bevel = step * 0.14;
+    // The first and last segments stay flat so corners never collide. The
+    // count is odd, so a neighbour walking the same edge the other way sees
+    // the same pattern flipped: its teeth land in these notches.
+    for (let i = 1; i < TEETH - 1; i++) {
+      const out = (i % 2 ? 1 : -1) * direction * depth;
+      const sx = fromX + ux * step * i;
+      const sy = fromY + uy * step * i;
+      const ex = sx + ux * step;
+      const ey = sy + uy * step;
+      shape.lineTo(sx, sy);
+      shape.lineTo(sx + nx * out + ux * bevel, sy + ny * out + uy * bevel);
+      shape.lineTo(ex + nx * out - ux * bevel, ey + ny * out - uy * bevel);
+      shape.lineTo(ex, ey);
     }
     shape.lineTo(toX, toY);
   }
   return shape;
 }
 
-function foamFloor(scene: THREE.Scene) {
-  const bump = foamTexture();
+function foamFloor(scene: THREE.Object3D) {
+  // Real mats never match perfectly: each one gets its own slight shade,
+  // carried as a vertex colour so the whole floor is still one draw call.
   const material = new THREE.MeshStandardMaterial({
-    color: 0x6a7174,
-    roughness: 0.99,
+    color: 0x7c8387,
+    roughness: 0.9,
     metalness: 0,
-    bumpMap: bump,
-    bumpScale: 0.02,
+    normalMap: foamNormalMap(),
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    vertexColors: true,
   });
+  const shade = seeded(19);
   const size = TILE * SCALE;
   // Mats are cut a hair smaller than their grid cell so the seam between them
   // reads as a dark line, the way it does on a real field.
   const seam = 0.07;
-  const tab = size * 0.105;
+  const tab = size * 0.035;
   const geometries: THREE.BufferGeometry[] = [];
   // A tab on one mat has to be a notch on its neighbour, so the seam direction
   // is decided once per seam and read from both sides.
@@ -210,6 +462,10 @@ function foamFloor(scene: THREE.Scene) {
         0.07,
         (row + 0.5) * size - (TILES * size) / 2,
       );
+      const tint = 0.93 + shade() * 0.12;
+      const colors = new Float32Array(geometry.attributes.position.count * 3);
+      colors.fill(tint);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometries.push(geometry);
     }
   const floor = new THREE.Mesh(mergeGeometries(geometries, false), material);
@@ -228,6 +484,26 @@ function foamFloor(scene: THREE.Scene) {
   scene.add(backing);
 }
 
+// Scenery outside the field walls never throws a shadow anyone sees on the
+// mats, so it stays out of the shadow pass: each part left out is one less
+// thing drawn twice every frame.
+function quietFarShadows(venue: THREE.Object3D) {
+  const reach = (FIELD_SIZE * SCALE) / 2 + 1;
+  const bounds = new THREE.Box3();
+  venue.updateMatrixWorld(true);
+  venue.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.castShadow) return;
+    bounds.setFromObject(mesh);
+    const outside =
+      bounds.min.x > reach ||
+      bounds.max.x < -reach ||
+      bounds.min.z > reach ||
+      bounds.max.z < -reach;
+    if (outside) mesh.castShadow = false;
+  });
+}
+
 // Width of the alliance-colored tape round each BASE, in scene units.
 const BASE_BORDER = 0.32;
 
@@ -236,11 +512,45 @@ const BASE_BORDER = 0.32;
 // wall now is, so the benches and trusses always clear it.
 const HALL_LAYOUT_HALF = 8.1;
 
-function arenaRoom(scene: THREE.Scene) {
+function arenaRoom(scene: THREE.Object3D) {
   const half = (FIELD_SIZE * SCALE) / 2;
   const grow = half - HALL_LAYOUT_HALF;
   const rail = half * 2 + 0.3;
-  place(scene, solid(70 + grow * 4, 0.3, 60 + grow * 4, 0x1c2c36), 0, -0.45, 0);
+  // Polished concrete hall floor, in slabs about the size of four mats.
+  const hallWide = 70 + grow * 4;
+  const hallDeep = 60 + grow * 4;
+  const concrete = concreteFloor(1);
+  concrete.map.repeat.set(hallWide / 8, hallDeep / 8);
+  concrete.roughnessMap.repeat.copy(concrete.map.repeat);
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(hallWide, 0.3, hallDeep),
+    new THREE.MeshStandardMaterial({
+      color: 0xc9cfd1,
+      map: concrete.map,
+      roughnessMap: concrete.roughnessMap,
+      roughness: 0.75,
+      metalness: 0,
+    }),
+  );
+  floor.receiveShadow = true;
+  place(scene, floor, 0, -0.45, 0);
+  // A band of dark event carpet round the field, as at a real venue, so the
+  // field reads as the stage and the hall floor as the room.
+  const carpetSize = rail + 7;
+  const carpet = eventCarpet(carpetSize / 3);
+  const rug = new THREE.Mesh(
+    new THREE.PlaneGeometry(carpetSize, carpetSize),
+    new THREE.MeshStandardMaterial({
+      map: carpet.map,
+      bumpMap: carpet.bumpMap,
+      bumpScale: 0.6,
+      roughness: 1,
+      metalness: 0,
+    }),
+  );
+  rug.rotation.x = -Math.PI / 2;
+  rug.receiveShadow = true;
+  place(scene, rug, 0, -0.295, 0);
   place(scene, solid(rail + 0.8, 0.22, rail + 0.8, 0x0f1c24, 0.6), 0, -0.12, 0);
   foamFloor(scene);
   for (const x of [-half - 0.1, half + 0.1]) {
@@ -248,13 +558,7 @@ function arenaRoom(scene: THREE.Scene) {
     place(scene, solid(0.15, 0.2, rail, 0x293d49, 0.6), x, 0.13, 0);
     const wall = new THREE.Mesh(
       new THREE.BoxGeometry(0.04, 0.6, rail - 0.1),
-      new THREE.MeshPhysicalMaterial({
-        color: 0x9dbbca,
-        transparent: true,
-        opacity: 0.16,
-        roughness: 0.1,
-        depthWrite: false,
-      }),
+      polycarbonate(),
     );
     place(scene, wall, x, 0.36, 0);
     for (let z = -half; z <= half; z += TILE * SCALE)
@@ -265,12 +569,7 @@ function arenaRoom(scene: THREE.Scene) {
     place(scene, solid(rail, 0.17, 0.16, 0x243844, 0.5), 0, 0.13, z);
     const wall = new THREE.Mesh(
       new THREE.BoxGeometry(rail - 0.1, 0.55, 0.04),
-      new THREE.MeshStandardMaterial({
-        color: 0xa2c5d8,
-        transparent: true,
-        opacity: 0.12,
-        depthWrite: false,
-      }),
+      polycarbonate(),
     );
     place(scene, wall, 0, 0.37, z);
     for (let x = -half; x <= half; x += TILE * SCALE)
@@ -326,8 +625,22 @@ function arenaRoom(scene: THREE.Scene) {
   const midline = Math.floor(half * 0.62);
   for (let z = -midline; z <= midline; z += 1)
     place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, MAT_TOP, z);
-  // Open competition hall with trusses, real benches, and readable wayfinding.
-  place(scene, solid(52 + grow * 2, 14, 0.3, 0x1b2e3b), 0, 4, -17 - grow);
+  // Open competition hall: a painted block wall carrying the event banners,
+  // aluminum bleachers down both sides, and a lighting truss overhead.
+  const wallWide = 52 + grow * 2;
+  const blocks = blockWall(wallWide / 3.2, 14 / 1.6);
+  const backWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallWide, 14, 0.3),
+    new THREE.MeshStandardMaterial({
+      map: blocks.map,
+      bumpMap: blocks.bumpMap,
+      bumpScale: 1.2,
+      roughness: 0.88,
+      metalness: 0,
+    }),
+  );
+  backWall.receiveShadow = true;
+  place(scene, backWall, 0, 4, -17 - grow);
   place(scene, label('FIELD / LAB', 13, 2, '#1b2e3b'), 0, 5.7, -16.8 - grow);
   place(
     scene,
@@ -342,25 +655,149 @@ function arenaRoom(scene: THREE.Scene) {
     3.9,
     -16.75 - grow,
   );
-  for (const side of [-1, 1]) {
-    for (let row = 0; row < 3; row++) {
-      place(
-        scene,
-        solid(5.5, 0.35, 18 + grow * 2, 0x354d5e),
-        side * (16 + grow + row * 1.6),
-        row * 0.55 - 0.1,
-        -1,
+  const benchLength = 18 + grow * 2;
+  const plank = ribbedPlank(benchLength / 1.2);
+  const plankMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb4bec4,
+    metalness: 0.85,
+    roughness: 0.38,
+    bumpMap: plank.bumpMap,
+    bumpScale: 0.5,
+  });
+  // Three stands of three tiers: one down each side and one behind the far
+  // end of the field, where both cameras can see it. Every seat is an
+  // instance of one mesh, and so is every spectator, so the whole crowd
+  // costs three draws.
+  type Seat = { x: number; y: number; z: number; color: number };
+  const seatSpots: Seat[] = [];
+  const rows = 3;
+  const tier = (
+    along: 'x' | 'z',
+    // Seat line of the front row, and which way the stand climbs.
+    front: number,
+    outward: number,
+    center: number,
+    length: number,
+    seatColor: number,
+  ) => {
+    for (let row = 0; row < rows; row++) {
+      const line = front + outward * row * 1.6;
+      const riser = solid(
+        along === 'z' ? 5.5 : length,
+        0.35,
+        along === 'z' ? length : 5.5,
+        0x2c3a44,
       );
-      for (let z = -8 - grow; z < 8 + grow; z += 1.15) {
-        place(
-          scene,
-          solid(0.75, 0.16, 0.75, side < 0 ? 0x315f7a : 0x74484b),
-          side * (14.4 + grow + row * 1.6),
-          row * 0.55 + 0.17,
-          z,
-        );
+      const riserLine = line + outward * 1.6;
+      if (along === 'z')
+        place(scene, riser, riserLine, row * 0.55 - 0.1, center);
+      else place(scene, riser, center, row * 0.55 - 0.1, riserLine);
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          along === 'z' ? 1.5 : length,
+          0.04,
+          along === 'z' ? length : 1.5,
+        ),
+        plankMaterial,
+      );
+      deck.receiveShadow = true;
+      if (along === 'z') place(scene, deck, line, row * 0.55 + 0.09, center);
+      else place(scene, deck, center, row * 0.55 + 0.09, line);
+      const count = Math.floor((length - 2) / 1.15);
+      for (let i = 0; i < count; i++) {
+        const offset = center - ((count - 1) * 1.15) / 2 + i * 1.15;
+        seatSpots.push({
+          x: along === 'z' ? line : offset,
+          y: row * 0.55 + 0.19,
+          z: along === 'z' ? offset : line,
+          color: seatColor,
+        });
       }
     }
+    // One handrail along the top tier keeps the stands readable.
+    const railLine = front + outward * ((rows - 1) * 1.6 + 0.9);
+    const rail = solid(
+      along === 'z' ? 0.07 : length,
+      0.07,
+      along === 'z' ? length : 0.07,
+      0xc3ccd1,
+      0.8,
+    );
+    if (along === 'z') place(scene, rail, railLine, 2.05, center);
+    else place(scene, rail, center, 2.05, railLine);
+    for (let t = -length / 2 + 0.5; t < length / 2 - 0.4; t += 3.5) {
+      const post = solid(0.07, 0.95, 0.07, 0xc3ccd1, 0.8);
+      if (along === 'z') place(scene, post, railLine, 1.6, center + t);
+      else place(scene, post, center + t, 1.6, railLine);
+    }
+  };
+  for (const side of [-1, 1])
+    tier(
+      'z',
+      side * (14.4 + grow),
+      side,
+      -1,
+      benchLength,
+      side < 0 ? 0x2f6f96 : 0x8c3f42,
+    );
+  tier('x', -(half + 4.2), -1, 0, half * 2 + 3, 0x59636b);
+
+  const seats = new THREE.InstancedMesh(
+    new RoundedBoxGeometry(0.75, 0.16, 0.75, 1, 0.05),
+    new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }),
+    seatSpots.length,
+  );
+  const pose = new THREE.Matrix4();
+  const tint = new THREE.Color();
+  seatSpots.forEach((spot, i) => {
+    seats.setMatrixAt(i, pose.makeTranslation(spot.x, spot.y, spot.z));
+    seats.setColorAt(i, tint.setHex(spot.color));
+  });
+  seats.receiveShadow = true;
+  scene.add(seats);
+
+  // The crowd: a seated body and a head on about two seats in three. Shirts
+  // lean toward the alliance colour of the stand they sit in.
+  const pick = seeded(53);
+  const shirts = [
+    0x2f6f96, 0x8c3f42, 0xe2ae35, 0x3f7f55, 0xe7e9ea, 0x2a2f36, 0x7a5aa6,
+    0xd9502d,
+  ];
+  const skins = [0xf1c9a5, 0xe0ac7e, 0xc68642, 0x8d5524, 0x5c3a21, 0xffdbac];
+  const crowd = seatSpots.filter(() => pick() < 0.66);
+  const bodies = new THREE.InstancedMesh(
+    new THREE.CapsuleGeometry(0.21, 0.36, 3, 8),
+    new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 }),
+    crowd.length,
+  );
+  const heads = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.16, 10, 8),
+    new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0 }),
+    crowd.length,
+  );
+  crowd.forEach((spot, i) => {
+    const lean = (pick() - 0.5) * 0.12;
+    const alliance =
+      spot.color === 0x2f6f96 || spot.color === 0x8c3f42 ? spot.color : null;
+    const shirt =
+      alliance !== null && pick() < 0.45
+        ? alliance
+        : shirts[Math.floor(pick() * shirts.length)];
+    bodies.setMatrixAt(
+      i,
+      pose.makeTranslation(spot.x + lean, spot.y + 0.47, spot.z),
+    );
+    bodies.setColorAt(i, tint.setHex(shirt));
+    heads.setMatrixAt(
+      i,
+      pose.makeTranslation(spot.x + lean * 1.4, spot.y + 0.98, spot.z),
+    );
+    heads.setColorAt(i, tint.setHex(skins[Math.floor(pick() * skins.length)]));
+  });
+  scene.add(bodies, heads);
+
+  // Alliance signs hang on the back wall, above the far stand.
+  for (const side of [-1, 1])
     place(
       scene,
       label(
@@ -371,10 +808,9 @@ function arenaRoom(scene: THREE.Scene) {
         side < 0 ? '#62b6ed' : '#e7807d',
       ),
       side * (10 + grow),
-      2.5,
-      -13 - grow,
+      3,
+      -16.8 - grow,
     );
-  }
   for (const x of [-13 - grow, 13 + grow]) {
     place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, -12 - grow);
     place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, 9 + grow);
@@ -386,6 +822,21 @@ function arenaRoom(scene: THREE.Scene) {
       const strut = solid(1.65, 0.08, 0.08, 0x80939f, 0.8);
       strut.rotation.z = 0.45;
       place(scene, strut, x, 10.15, z);
+    }
+    // Stage lights clamped under the truss, aimed at the field. Their lenses
+    // are bright enough to glow where the quality tier allows it.
+    const lens = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xfff2dc).multiplyScalar(4),
+    });
+    for (let i = -2; i <= 2; i++) {
+      const x = i * ((12 + grow) / 2.4);
+      const housing = solid(0.9, 0.55, 0.7, 0x1f272c, 0.3);
+      housing.rotation.x = -0.5;
+      place(scene, housing, x, 9.35, z + 0.45);
+      const face = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), lens);
+      // Tipped to face down and out toward the field.
+      face.rotation.x = Math.PI / 2 - 0.5;
+      place(scene, face, x, 9.12, z + 0.6);
     }
   }
 }
@@ -406,7 +857,13 @@ export function createArenaScene(
   world: World,
 ) {
   const { scene, renderer, environment } = setupScene(canvas, 0x182936);
-  arenaRoom(scene);
+  // Everything that never moves - field, goals, hall, stands - is built into
+  // one group and fused into a handful of meshes.
+  const venue = new THREE.Group();
+  arenaRoom(venue);
+  quietFarShadows(venue);
+  mergeStaticMeshes(venue, []);
+  scene.add(venue);
   // Fog and draw distance were tuned for the original field; stretch them with
   // the field so a bigger one is never lost in the haze.
   const roomy = (FIELD_SIZE * SCALE) / (HALL_LAYOUT_HALF * 2);
@@ -415,6 +872,7 @@ export function createArenaScene(
     scene.fog.far *= roomy;
   }
   const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120 * roomy);
+  const pipeline = createRenderPipeline(renderer, scene, camera);
   // Where the camera is looking. Driving input is turned to match it, so
   // "up" on the stick always drives away from the camera.
   const cameraTarget = new THREE.Vector3();
@@ -423,6 +881,15 @@ export function createArenaScene(
     height = 1;
   const lookAt = new THREE.Vector3(0, 0, 0);
   const desiredPosition = new THREE.Vector3();
+  const followLook = new THREE.Vector3();
+  const lineStart = new THREE.Vector3();
+  const lineEnd = new THREE.Vector3();
+  const mouth = new THREE.Vector3();
+  const scratchVelocity = new THREE.Vector2();
+  const scratchHeading = new THREE.Vector2();
+  // A paused match is a still image: draw it once, then leave the graphics
+  // chip alone until something changes.
+  let stillFrameDrawn = false;
   const player = createRobotModel(selected);
   const bot = createRobotModel({
     drive: 'trailblazer',
@@ -457,19 +924,53 @@ export function createArenaScene(
   const aimGold = 0xf0c35b;
   const aimRing = ring(0.42, aimGold, 0.027);
   scene.add(aimRing);
-  const scoreRadius = scoreReach(selected.reach, selected.score) * SCALE;
-  const rangeRing = ring(scoreRadius, blue, 0.018);
+  // Range Finder's ring: the loading range round the GOAL, dim until the robot
+  // is inside it, then bright.
+  const loadRange = scoreReach(selected.reach);
+  const rangeRing = ring(loadRange * SCALE, blue, 0.018);
   rangeRing.position.copy(position(BLUE_GOAL.x, BLUE_GOAL.y, MAT_TOP + 0.01));
   rangeRing.visible = selected.assist === 'range';
   scene.add(rangeRing);
-  const pieces = new Map<number, THREE.Group>();
+  const rangeColor = new THREE.Color(blue);
+  // The ARTIFACTS on the mats are drawn as instances: one body and one set
+  // of seams per colour, however many balls are out. Only a ball in flight
+  // (into a robot or a GOAL) gets a mesh of its own.
+  const parts = getBallParts();
+  const makeField = (color: 'P' | 'G') => {
+    const capacity = Math.max(
+      1,
+      world.pieces.filter((piece) => piece.color === color).length,
+    );
+    const body = new THREE.InstancedMesh(
+      parts.sphere,
+      parts.body[color],
+      capacity,
+    );
+    body.customDepthMaterial = parts.shadow;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    const seams = new THREE.InstancedMesh(
+      parts.seam,
+      parts.seamColor[color],
+      capacity,
+    );
+    // The balls move every frame, so the precomputed bounds would be stale.
+    body.frustumCulled = seams.frustumCulled = false;
+    scene.add(body, seams);
+    return { body, seams };
+  };
+  const fieldBalls = { P: makeField('P'), G: makeField('G') };
+  // Each ball's accumulated roll, and whether it was on the mats last frame.
+  const rolls = new Map<number, THREE.Euler>();
+  const onMats = new Map<number, boolean>();
   world.pieces.forEach((piece) => {
-    const mesh = artifact(piece.color);
-    mesh.position.copy(position(piece.x, piece.y, 0.34));
-    mesh.rotation.y = piece.id * 1.9;
-    scene.add(mesh);
-    pieces.set(piece.id, mesh);
+    rolls.set(piece.id, new THREE.Euler(0, piece.id * 1.9, 0));
+    onMats.set(piece.id, piece.active);
   });
+  const ballPose = new THREE.Matrix4();
+  const ballSpot = new THREE.Vector3();
+  const ballTurn = new THREE.Quaternion();
+  const ballSize = new THREE.Vector3();
   const cargo = [new THREE.Group(), new THREE.Group()];
   player.root.add(cargo[0]);
   bot.root.add(cargo[1]);
@@ -502,10 +1003,11 @@ export function createArenaScene(
     const rect = canvas.parentElement!.getBoundingClientRect();
     width = Math.max(1, rect.width);
     height = Math.max(1, rect.height);
-    renderer.setSize(width, height, false);
+    pipeline.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     if (mode === 'arena') resetArenaCamera();
+    stillFrameDrawn = false;
   };
   // Framed off the mats so the whole square field fills the view.
   const fieldSpan = FIELD_SIZE * SCALE;
@@ -525,6 +1027,8 @@ export function createArenaScene(
   const render = (dt: number, state: World, paused: boolean, alpha = 1) => {
     const tween = (from: number, to: number) => from + (to - from) * alpha;
     if (disposed) return;
+    if (!paused) stillFrameDrawn = false;
+    else if (stillFrameDrawn) return;
     for (const particle of state.particles) {
       if (!particle.text || scoreLabels.has(particle)) continue;
       const text = label(particle.text, 1.05, 0.56, '#203542', '#f6d68d');
@@ -541,8 +1045,11 @@ export function createArenaScene(
         scoreLabels.delete(particle);
         continue;
       }
-      text.position.copy(
-        position(particle.x, particle.y, 2.5 + (1 - particle.life) * 0.8),
+      toScene(
+        text.position,
+        particle.x,
+        particle.y,
+        2.5 + (1 - particle.life) * 0.8,
       );
       text.quaternion.copy(camera.quaternion);
       text.material.opacity = Math.min(1, particle.life * 3);
@@ -551,8 +1058,11 @@ export function createArenaScene(
     const models = [player, bot];
     models.forEach((model, index) => {
       const actor = actors[index];
-      model.root.position.copy(
-        position(tween(actor.px, actor.x), tween(actor.py, actor.y), 0.07),
+      toScene(
+        model.root.position,
+        tween(actor.px, actor.x),
+        tween(actor.py, actor.y),
+        MAT_TOP,
       );
       const angle = Math.PI / 2 - actor.angle;
       const error = Math.atan2(
@@ -572,14 +1082,17 @@ export function createArenaScene(
             ((travel * dt) / (0.55 * 0.235)) * (w.position.x < 0 ? -1 : 1),
           );
         });
-        const acceleration = new THREE.Vector2(actor.vx, actor.vy).sub(
-          previousVelocity[index],
-        );
+        const acceleration = scratchVelocity
+          .set(actor.vx, actor.vy)
+          .sub(previousVelocity[index]);
         const lean = motion.matches
           ? 0
           : THREE.MathUtils.clamp(
               (acceleration.dot(
-                new THREE.Vector2(Math.cos(actor.angle), Math.sin(actor.angle)),
+                scratchHeading.set(
+                  Math.cos(actor.angle),
+                  Math.sin(actor.angle),
+                ),
               ) /
                 Math.max(dt, 0.001)) *
                 0.000025,
@@ -673,33 +1186,49 @@ export function createArenaScene(
         dt,
       );
     });
+    const drawn = { P: 0, G: 0 };
     state.pieces.forEach((piece) => {
-      const mesh = pieces.get(piece.id)!;
+      const key = piece.color === 'P' ? 'P' : 'G';
+      const roll = rolls.get(piece.id)!;
       if (piece.active) {
-        // Pickup pulls the mesh out of the scene and flies a copy into the
-        // robot. A tipped GOAL puts that ARTIFACT back on the mats, so its mesh
-        // has to go back in or it stays invisible for the rest of the match.
-        if (mesh.parent !== scene) scene.add(mesh);
-        mesh.position.copy(
-          position(tween(piece.px, piece.x), tween(piece.py, piece.y), 0.34),
-        );
+        // A tipped GOAL puts ARTIFACTS back on the mats: they simply join the
+        // instances again.
+        onMats.set(piece.id, true);
         if (!paused) {
           // True rolling speed turns a fast ARTIFACT into a blur, so the spin
           // is capped: it still reads as rolling, just without the strobing.
           const spin =
             260 / Math.max(260, Math.hypot(piece.vx ?? 0, piece.vy ?? 0));
-          mesh.rotation.x += ((piece.vy ?? 0) * spin * SCALE * dt) / 0.28;
-          mesh.rotation.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / 0.28;
+          roll.x += ((piece.vy ?? 0) * spin * SCALE * dt) / 0.28;
+          roll.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / 0.28;
         }
-      }
-      if (!piece.active && mesh.parent === scene) {
+        toScene(
+          ballSpot,
+          tween(piece.px, piece.x),
+          tween(piece.py, piece.y),
+          restingHeight(piece.color),
+        );
+        const radius =
+          piece.color === 'P'
+            ? ARTIFACT_RADIUS * PURPLE_SCALE
+            : ARTIFACT_RADIUS;
+        ballPose.compose(
+          ballSpot,
+          ballTurn.setFromEuler(roll),
+          ballSize.setScalar(radius),
+        );
+        const slot = drawn[key]++;
+        fieldBalls[key].body.setMatrixAt(slot, ballPose);
+        fieldBalls[key].seams.setMatrixAt(slot, ballPose);
+      } else if (onMats.get(piece.id)) {
+        // Just picked up: a copy flies from the mats into the robot.
+        onMats.set(piece.id, false);
         const collectorIndex = piece.collector === 'bot' ? 1 : 0;
-        scene.remove(mesh);
         const pickup = artifact(piece.color);
         scene.add(pickup);
         flights.push({
           mesh: pickup,
-          from: position(piece.x, piece.y, 0.34),
+          from: position(piece.x, piece.y, restingHeight(piece.color)),
           to: models[collectorIndex].root.localToWorld(
             new THREE.Vector3(0, 2, 0.65),
           ),
@@ -710,6 +1239,12 @@ export function createArenaScene(
         });
       }
     });
+    for (const key of ['P', 'G'] as const) {
+      const { body, seams } = fieldBalls[key];
+      body.count = seams.count = drawn[key];
+      body.instanceMatrix.needsUpdate = true;
+      seams.instanceMatrix.needsUpdate = true;
+    }
     for (let i = flights.length - 1; i >= 0; i--) {
       const f = flights[i];
       if (!paused) f.elapsed += dt;
@@ -717,8 +1252,8 @@ export function createArenaScene(
       f.mesh.visible = f.elapsed >= 0;
       if (f.collector !== undefined) {
         const root = models[f.collector].root;
-        const mouth = root.localToWorld(new THREE.Vector3(0, 0.9, 3.1));
-        f.to.copy(root.localToWorld(new THREE.Vector3(0, 2.05, 0.65)));
+        root.localToWorld(mouth.set(0, 0.9, 3.1));
+        root.localToWorld(f.to.set(0, 2.05, 0.65));
         if (t < 0.55) f.mesh.position.lerpVectors(f.from, mouth, t / 0.55);
         else f.mesh.position.lerpVectors(mouth, f.to, (t - 0.55) / 0.45);
       } else {
@@ -732,31 +1267,50 @@ export function createArenaScene(
         flights.splice(i, 1);
       }
     }
-    playerRing.position.copy(
-      position(state.player.x, state.player.y, MAT_TOP + 0.01),
+    toScene(
+      playerRing.position,
+      state.player.x,
+      state.player.y,
+      MAT_TOP + 0.01,
     );
-    botRing.position.copy(position(state.bot.x, state.bot.y, MAT_TOP + 0.01));
+    toScene(botRing.position, state.bot.x, state.bot.y, MAT_TOP + 0.01);
+    if (rangeRing.visible) {
+      const inRange =
+        Math.hypot(
+          state.player.x - BLUE_GOAL.x,
+          state.player.y - BLUE_GOAL.y,
+        ) <= loadRange;
+      (rangeRing.material as THREE.MeshBasicMaterial).color
+        .copy(rangeColor)
+        .multiplyScalar(inRange ? 2.6 : 0.7);
+    }
+    // Guides are the assist parts' job alone; each draws only in its own
+    // part of the match (see `assistGuides`).
     const target = playerTarget(state, selected);
-    if (target) {
+    if (target && assistGuides(selected.assist, target.kind)) {
       aimRing.visible = true;
-      aimRing.position.copy(position(target.x, target.y, MAT_TOP + 0.02));
+      toScene(aimRing.position, target.x, target.y, MAT_TOP + 0.02);
       aimRing.scale.setScalar(target.kind === 'piece' ? 1 : 2.5);
       const aimColor = target.kind === 'base' ? blue : aimGold;
-      (aimRing.material as THREE.MeshBasicMaterial).color.setHex(aimColor);
+      (aimRing.material as THREE.MeshBasicMaterial).color
+        .setHex(aimColor)
+        .multiplyScalar(1.6);
       (targetLine.material as THREE.LineDashedMaterial).color.setHex(aimColor);
       const attr = targetLine.geometry.getAttribute(
         'position',
       ) as THREE.BufferAttribute;
-      const start = position(state.player.x, state.player.y, MAT_TOP + 0.03),
-        end = position(target.x, target.y, MAT_TOP + 0.03);
+      const start = toScene(
+          lineStart,
+          state.player.x,
+          state.player.y,
+          MAT_TOP + 0.03,
+        ),
+        end = toScene(lineEnd, target.x, target.y, MAT_TOP + 0.03);
       attr.setXYZ(0, start.x, start.y, start.z);
       attr.setXYZ(1, end.x, end.y, end.z);
       attr.needsUpdate = true;
       targetLine.computeLineDistances();
-      targetLine.visible =
-        selected.assist === 'pathfinder' ||
-        mode === 'follow' ||
-        state.time <= 10;
+      targetLine.visible = true;
     } else {
       aimRing.visible = false;
       targetLine.visible = false;
@@ -765,24 +1319,26 @@ export function createArenaScene(
     // visibly stops rather than the view still drifting after the robot.
     if (mode === 'follow' && !paused) {
       const p = player.root.position;
-      desiredPosition.set(p.x, 6, p.z + 8);
+      desiredPosition.set(p.x, FOLLOW_HEIGHT, p.z + FOLLOW_BACK);
       const smoothing = motion.matches ? 1 : 1 - Math.exp(-6 * dt);
       camera.position.lerp(desiredPosition, smoothing);
-      lookAt.lerp(new THREE.Vector3(p.x, 0.1, p.z - 2), smoothing);
+      lookAt.lerp(followLook.set(p.x, 0.1, p.z - FOLLOW_AHEAD), smoothing);
       camera.lookAt(lookAt);
       cameraTarget.copy(lookAt);
     }
-    renderer.render(scene, camera);
+    pipeline.render();
+    if (paused) stillFrameDrawn = true;
   };
   return {
     render,
     setCamera(next: CameraMode) {
       mode = next;
+      stillFrameDrawn = false;
       if (next === 'arena') resetArenaCamera();
       if (next === 'follow') {
         const p = position(world.player.x, world.player.y);
-        lookAt.set(p.x, 0.1, p.z - 2);
-        camera.position.set(p.x, 6, p.z + 8);
+        lookAt.set(p.x, 0.1, p.z - FOLLOW_AHEAD);
+        camera.position.set(p.x, FOLLOW_HEIGHT, p.z + FOLLOW_BACK);
         cameraTarget.copy(lookAt);
         camera.lookAt(lookAt);
       }
@@ -799,10 +1355,12 @@ export function createArenaScene(
       disposed = true;
       observer.disconnect();
       disposeObject(scene);
-      pieces.forEach((mesh) => {
-        if (!mesh.parent) disposeObject(mesh);
-      });
+      for (const { body, seams } of Object.values(fieldBalls)) {
+        body.dispose();
+        seams.dispose();
+      }
       environment.dispose();
+      pipeline.dispose();
       renderer.dispose();
     },
   };

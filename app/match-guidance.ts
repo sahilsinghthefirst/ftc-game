@@ -4,7 +4,7 @@ import type { World } from './game-arena';
 
 type GuidanceWorld = Pick<World, 'player' | 'pieces' | 'time'>;
 
-// Slots in each storage module. A green fills one; a big purple fills two,
+// Slots in each storage module. A yellow fills one; a big purple fills two,
 // except in the Low Rider Hopper (see `artifactSpace`).
 export function carryCapacity(module: string) {
   if (module === 'stackpack') return 6;
@@ -93,7 +93,7 @@ export function collectProfile(module: string): CollectProfile {
       topSpeed: 1,
     };
   // A sorter that only swallows the big purples. They are worth 1.5 each
-  // toward a tip, so it fills a GOAL fastest - as long as you ignore green.
+  // toward a tip, so it fills a GOAL fastest - as long as you ignore yellow.
   if (module === 'sorter')
     return {
       radius: 86,
@@ -123,12 +123,6 @@ export function shoveResist(drive: string) {
   return 0.6;
 }
 
-// Extra GOAL range a scoring tool adds on top of whatever the lift can reach.
-// The flywheel launches, so it can load from well outside the lift's range.
-export function scoreReachBonus(score: string) {
-  return score === 'flywheel' ? 60 : 0;
-}
-
 // The four lifts trade reach against speed. The taller and heavier the lift,
 // the further out it can load the GOAL from - and the slower the whole robot
 // drives for carrying it. Listed shortest reach, fastest robot first.
@@ -141,11 +135,57 @@ export function reachProfile(reach: string) {
   return { radius: 125, topSpeed: 1 };
 }
 
-// How close to the GOAL a robot has to be to load it: whatever the lift can
-// reach, plus anything the scoring tool adds. The match and the range ring on
-// the field both read this, so what players see is what counts.
-export function scoreReach(reach: string, score: string) {
-  return reachProfile(reach).radius + scoreReachBonus(score);
+// How close to the GOAL a robot has to be to load it. Only the lift decides
+// this. The match and the range ring on the field both read it, so what
+// players see is what counts.
+export function scoreReach(reach: string) {
+  return reachProfile(reach).radius;
+}
+
+// The lift sets where a robot can load from; the scoring tool sets how it
+// loads once it is there. The four tools trade loading speed against how many
+// go in at once, whether the robot has to stop, and whether every shot lands.
+export type ScoreProfile = {
+  // Seconds before the tool can load again.
+  cycle: number;
+  // One ARTIFACT per load, or the whole of storage at once.
+  batch: 'one' | 'all';
+  // Only fires with the robot (nearly) stopped.
+  needsStop: boolean;
+  // Chance a load bounces off the rim and rolls back onto the mats.
+  miss: number;
+};
+
+// Below this speed a robot counts as stopped.
+export const STOPPED_SPEED = 40;
+
+export function scoreProfile(score: string): ScoreProfile {
+  // Fastest feed of all, but it only fires from a standstill.
+  if (score === 'burst')
+    return { cycle: 0.15, batch: 'one', needsStop: true, miss: 0 };
+  // Shoots on the move, quickly - and one shot in four bounces out.
+  if (score === 'flywheel')
+    return { cycle: 0.25, batch: 'one', needsStop: false, miss: 0.25 };
+  // The whole load at once, from a standstill, then a long reset.
+  if (score === 'tiptray')
+    return { cycle: 1.1, batch: 'all', needsStop: true, miss: 0 };
+  // Steady and certain: one at a time, on the move, never misses.
+  return { cycle: 0.45, batch: 'one', needsStop: false, miss: 0 };
+}
+
+// Whether the scoring tool will fire right now.
+export function canFire(score: string, speed: number) {
+  return !scoreProfile(score).needsStop || speed < STOPPED_SPEED;
+}
+
+// Guides on the field come only from assist parts, and each one helps in its
+// own part of the match: Pathfinder routes to the next ARTIFACT (and home to
+// BASE at the end), Auto Align points the way to the GOAL, and Range Finder
+// rings the GOAL instead. With none of those, the field shows no guides at all.
+export function assistGuides(assist: string, kind: 'piece' | 'goal' | 'base') {
+  if (assist === 'pathfinder') return kind === 'piece' || kind === 'base';
+  if (assist === 'align') return kind === 'goal';
+  return false;
 }
 
 // Everything that sets how fast the robot drives on the mats: the drivetrain,

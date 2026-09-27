@@ -331,7 +331,7 @@ function Storage({ id }: { id: string }) {
           strokeWidth="5"
         />
         <circle cx="331" cy="316" r="11" fill="#9c5ad1" />
-        <circle cx="360" cy="318" r="11" fill="#9bc53d" />
+        <circle cx="360" cy="318" r="11" fill="#e8c32a" />
       </g>
     );
   }
