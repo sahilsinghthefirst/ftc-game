@@ -139,7 +139,7 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Comet Mecanum',
     code: 'DRV-01',
-    blurb: 'Slides sideways to line up on the GOAL.',
+    blurb: 'Slides sideways to line up on the HIVE.',
     strength: 'Moves in every direction',
     tradeoff: 'Drinks battery',
     traits: { speed: 5, handling: 0, control: 2, collect: 0, score: 0 },
@@ -167,7 +167,7 @@ const modules: Module[] = [
     code: 'DRV-03',
     blurb: 'The fastest base on the mats.',
     strength: 'Huge top speed',
-    tradeoff: 'Skids a long way past the GOAL',
+    tradeoff: 'Skids a long way past the HIVE',
     traits: { speed: 6, handling: -6, control: 0, collect: 0, score: 0 },
     weight: 1,
     power: 3,
@@ -231,7 +231,7 @@ const modules: Module[] = [
     name: 'NectarSort Funnel',
     code: 'INT-04',
     blurb: 'A funnel shaped to swallow only your big blue NECTAR.',
-    strength: 'Fills the GOAL fastest at 1.5 a time',
+    strength: 'Fills a CELL fastest at 1.5 a time',
     tradeoff: 'Drives straight past all POLLEN',
     traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
@@ -284,7 +284,7 @@ const modules: Module[] = [
     code: 'RCH-02',
     blurb: 'A light arm that swings up to the rim.',
     strength: 'Lightest lift, so the fastest robot',
-    tradeoff: 'Must drive right up to the GOAL',
+    tradeoff: 'Must drive right up to the CELL',
     traits: { speed: 3, handling: 1, control: 0, collect: 0, score: 0 },
     weight: 2,
     power: 3,
@@ -308,7 +308,7 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Orbit Turret',
     code: 'RCH-04',
-    blurb: 'Swings the scorer out over the GOAL.',
+    blurb: 'Swings the scorer up into the CELL.',
     strength: 'Loads from well out',
     tradeoff: 'Heavy turret slows the robot',
     traits: { speed: -2, handling: -2, control: 1, collect: 0, score: 2 },
@@ -321,7 +321,7 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Cascade Slides',
     code: 'RCH-01',
-    blurb: 'Loads the GOAL from well back in the field.',
+    blurb: 'Loads the HIVE from well back in the field.',
     strength: 'By far the longest reach',
     tradeoff: 'Tall and heavy: the slowest robot',
     traits: { speed: -4, handling: -3, control: -2, collect: 0, score: 3 },
@@ -334,8 +334,8 @@ const modules: Module[] = [
     category: 'score',
     name: 'Burst Feeder',
     code: 'SCR-01',
-    blurb: 'Fires ARTIFACTS into the GOAL back to back.',
-    strength: 'Fills the GOAL fastest',
+    blurb: 'Fires ARTIFACTS into the CELL back to back.',
+    strength: 'Fills the CELL fastest',
     tradeoff: 'Only fires with the robot stopped',
     traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 3 },
     weight: 2,
@@ -360,7 +360,7 @@ const modules: Module[] = [
     category: 'score',
     name: 'TipTray',
     code: 'SCR-03',
-    blurb: 'Tips the whole load into the GOAL at once.',
+    blurb: 'Tips the whole load into the CELL at once.',
     strength: 'Empties your storage in one motion',
     tradeoff: 'Must stop, then a very long reload',
     traits: { speed: 0, handling: 1, control: 0, collect: 0, score: 2 },
@@ -373,7 +373,7 @@ const modules: Module[] = [
     category: 'score',
     name: 'Vector Flywheel',
     code: 'SCR-04',
-    blurb: 'Launches ARTIFACTS into the GOAL without slowing down.',
+    blurb: 'Launches ARTIFACTS into the CELL without slowing down.',
     strength: 'Quick shots on the move',
     tradeoff: 'One shot in four bounces out',
     traits: { speed: 1, handling: -2, control: -2, collect: 0, score: 2 },
@@ -386,9 +386,9 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Range Finder',
     code: 'SNS-02',
-    blurb: 'Rings the GOAL and lights up once you are close enough to load.',
+    blurb: 'Marks where you can load from, and lights up once you are there.',
     strength: 'Never wastes a trip',
-    tradeoff: 'Only useful at the GOAL',
+    tradeoff: 'Only useful at the HIVE',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 1,
     power: 1,
@@ -399,8 +399,8 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Auto Align',
     code: 'SNS-03',
-    blurb: 'Points the way to the GOAL and widens your aim.',
-    strength: 'Guides every trip to the GOAL',
+    blurb: 'Points the way to the upward CELL and widens your aim.',
+    strength: 'Guides every trip to the HIVE',
     tradeoff: 'Costs real top speed',
     traits: { speed: -3, handling: 1, control: 3, collect: 0, score: 1 },
     weight: 1,
@@ -414,7 +414,7 @@ const modules: Module[] = [
     code: 'SNS-04',
     blurb: 'Draws the route to the next ARTIFACT, and home to BASE at the end.',
     strength: 'Keeps your cycles short',
-    tradeoff: 'No help at the GOAL',
+    tradeoff: 'No help at the HIVE',
     traits: { speed: 1, handling: 3, control: 1, collect: 0, score: 0 },
     weight: 1,
     power: 2,
@@ -492,7 +492,7 @@ const traitLabels: { id: Trait; label: string; hint: string }[] = [
   },
   { id: 'control', label: 'Control', hint: 'How steady it is while driving' },
   { id: 'collect', label: 'Collect', hint: 'How easily it picks ARTIFACTS up' },
-  { id: 'score', label: 'Score', hint: 'How quickly it loads the GOAL' },
+  { id: 'score', label: 'Score', hint: 'How quickly it loads the HIVE' },
 ];
 
 function HowItWorks() {
@@ -616,8 +616,9 @@ function Briefing({
           <h1>Collect. Match. Get home.</h1>
           <p className="briefing-lead">
             Your robot is ready. ARTIFACTS score nothing on their own - load the
-            blue GOAL until it tips for {tipPoints} points, then chase the ones
-            it spills. Reach BASE before the horn.
+            upward CELL of the blue HIVE until it tips for {tipPoints} points.
+            It pours out on that side, and the other CELL swings up, so go round
+            and load it next. Reach BASE before the horn.
           </p>
           <div className="mission-strip">
             <div>
@@ -629,7 +630,7 @@ function Briefing({
             <div>
               <span>2</span>
               <strong>TIP</strong>
-              <p>Load {tipAt} of GOAL value</p>
+              <p>Load {tipAt} into the up CELL</p>
             </div>
             <ChevronRight />
             <div>
@@ -640,7 +641,7 @@ function Briefing({
           </div>
           <div className="tip-brief">
             <div>
-              <p className="eyebrow">TIPPING THE GOAL</p>
+              <p className="eyebrow">TIPPING THE HIVE</p>
               <strong>NECTAR {nectarValue} · POLLEN 1</strong>
             </div>
             <p>
@@ -779,7 +780,7 @@ function Results({
               <strong>{result.scored}</strong>
             </div>
             <div>
-              <span>GOAL TIPS</span>
+              <span>HIVE TIPS</span>
               <strong>{result.tips}</strong>
             </div>
             <div>

@@ -10,12 +10,23 @@ import {
   tipValue,
   usedSpace,
   goalTips,
+  inLoadingRange,
   mayCollect,
   playerTarget,
   GOAL_TIP_AT,
   TIP_POINTS,
 } from '../app/match-guidance.ts';
-import { FIELD_SIZE, pieceLayout } from '../app/field.ts';
+import {
+  CELL_PRELOAD,
+  cellMouth,
+  FIELD_CENTER,
+  FIELD_SIZE,
+  HIVE_START_UP,
+  HIVE_X,
+  LOAD_FRONT,
+  loadingSpot,
+  pieceLayout,
+} from '../app/field.ts';
 
 const loadout = { carry: 'lowbin', collect: 'widewave', assist: 'range' };
 function world() {
@@ -26,6 +37,10 @@ function world() {
       { id: 0, x: 10, y: 0, color: 'P', alliance: 'blue', active: true },
       { id: 1, x: 30, y: 0, color: 'G', active: true },
     ],
+    hives: {
+      blue: { up: 1, load: 0, tips: 0 },
+      red: { up: 1, load: 0, tips: 0 },
+    },
     time: 42,
     playerScore: 16,
     botScore: 8,
@@ -54,7 +69,7 @@ test('A NectarSort robot is guided past POLLEN to its NECTAR', () => {
   assert.equal(target.color, 'P');
 });
 
-test('Anything on board sends the robot to the GOAL, or nowhere once empty', () => {
+test('Anything on board sends the robot to the HIVE, or nowhere once empty', () => {
   const state = world();
   assert.equal(playerTarget(state, loadout).kind, 'goal');
   state.pieces.forEach((piece) => (piece.active = false));
@@ -63,7 +78,73 @@ test('Anything on board sends the robot to the GOAL, or nowhere once empty', () 
   assert.equal(playerTarget(state, loadout), undefined);
 });
 
-test('Other assist modes retain their current goal guidance', () => {
+test('The guide leads to whichever CELL is up, and switches sides when it tips', () => {
+  const state = world();
+  const near = playerTarget(state, loadout);
+  assert.deepEqual({ x: near.x, y: near.y }, loadingSpot('blue', 1));
+  assert.ok(
+    near.y > FIELD_CENTER,
+    'the near CELL is loaded from the near side',
+  );
+  state.hives.blue.up = -1;
+  const far = playerTarget(state, loadout);
+  assert.deepEqual({ x: far.x, y: far.y }, loadingSpot('blue', -1));
+  assert.ok(far.y < FIELD_CENTER, 'the far CELL is loaded from the far side');
+  // Lined up on its own HIVE, not the middle or the red one.
+  assert.equal(far.x, HIVE_X.blue);
+  // The loading spot itself is in range of even the shortest lift.
+  for (const end of [1, -1])
+    assert.ok(inLoadingRange(loadingSpot('blue', end), 'blue', end, 85));
+});
+
+test('An upward CELL only loads from out in front of its open end', () => {
+  const mouth = cellMouth('blue', 1);
+  const reach = 220;
+  // Straight out in front: yes.
+  assert.ok(inLoadingRange({ x: mouth.x, y: mouth.y + 60 }, 'blue', 1, reach));
+  // Under the HIVE, right beneath the mouth: no.
+  assert.ok(!inLoadingRange({ x: mouth.x, y: mouth.y }, 'blue', 1, reach));
+  // From behind, on the far side of the HIVE: no, however long the reach.
+  assert.ok(
+    !inLoadingRange(
+      { x: mouth.x, y: FIELD_CENTER - LOAD_FRONT - 20 },
+      'blue',
+      1,
+      999,
+    ),
+  );
+  // Out in front but beyond the lift's reach: no.
+  assert.ok(
+    !inLoadingRange({ x: mouth.x, y: mouth.y + reach + 30 }, 'blue', 1, reach),
+  );
+  // The front line is where it says.
+  assert.ok(
+    inLoadingRange(
+      { x: mouth.x, y: FIELD_CENTER + LOAD_FRONT + 0.01 },
+      'blue',
+      1,
+      reach,
+    ),
+  );
+  assert.ok(
+    !inLoadingRange(
+      { x: mouth.x, y: FIELD_CENTER + LOAD_FRONT - 1 },
+      'blue',
+      1,
+      reach,
+    ),
+  );
+});
+
+test('Each HIVE starts with its near CELL up, already holding three NECTAR', () => {
+  assert.equal(HIVE_START_UP, 1);
+  assert.equal(CELL_PRELOAD, 3);
+  // Three NECTAR are worth 4.5 of the 10 a tip needs.
+  assert.equal(CELL_PRELOAD * tipValue('P'), 4.5);
+  assert.ok(!goalTips(CELL_PRELOAD * tipValue('P')));
+});
+
+test('Other assist modes retain their current HIVE guidance', () => {
   for (const assist of ['range', 'align', 'pathfinder']) {
     assert.equal(playerTarget(world(), { ...loadout, assist }).kind, 'goal');
   }

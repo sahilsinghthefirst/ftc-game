@@ -1,8 +1,38 @@
 // Explicit extension so `node --test` can load this module directly.
-import { BLUE_BASE, BLUE_GOAL, type Alliance } from './field.ts';
+import {
+  BLUE_BASE,
+  cellMouth,
+  FIELD_CENTER,
+  LOAD_FRONT,
+  loadingSpot,
+  type Alliance,
+  type CellEnd,
+} from './field.ts';
 import type { World } from './game-arena';
 
-type GuidanceWorld = Pick<World, 'player' | 'pieces' | 'time'>;
+type GuidanceWorld = Pick<World, 'player' | 'pieces' | 'time' | 'hives'>;
+
+// Whether a robot can load an alliance's upward CELL from where it stands: out
+// in front of the CELL's open end, and within reach of its mouth. The opening
+// faces outward, so nothing goes in from underneath the HIVE or from behind.
+export function inLoadingRange(
+  robot: { x: number; y: number },
+  alliance: Alliance,
+  end: CellEnd,
+  reach: number,
+) {
+  const mouth = cellMouth(alliance, end);
+  return (
+    (robot.y - FIELD_CENTER) * end >= LOAD_FRONT &&
+    Math.hypot(robot.x - mouth.x, robot.y - mouth.y) <= reach
+  );
+}
+
+// How the upward CELL is described to the player: the follow camera always
+// looks up the field, so the near CELL is the one facing the camera.
+export function cellSide(end: CellEnd) {
+  return end > 0 ? 'near' : 'far';
+}
 
 // Slots in each storage module. POLLEN fills one; a big NECTAR fills two,
 // except in the Low Rider Hopper (see `artifactSpace`).
@@ -93,7 +123,7 @@ export function collectProfile(module: string): CollectProfile {
       topSpeed: 1,
     };
   // A sorter that only swallows the big NECTAR. It is worth 1.5 each toward
-  // a tip, so it fills a GOAL fastest - as long as you ignore POLLEN.
+  // a tip, so it fills a CELL fastest - as long as you ignore POLLEN.
   if (module === 'sorter')
     return {
       radius: 86,
@@ -124,7 +154,7 @@ export function shoveResist(drive: string) {
 }
 
 // The four lifts trade reach against speed. The taller and heavier the lift,
-// the further out it can load the GOAL from - and the slower the whole robot
+// the further out it can load the HIVE from - and the slower the whole robot
 // drives for carrying it. Listed shortest reach, fastest robot first.
 export const REACH_ORDER = ['swingarm', 'elevator', 'turret', 'cascade'];
 
@@ -135,9 +165,9 @@ export function reachProfile(reach: string) {
   return { radius: 125, topSpeed: 1 };
 }
 
-// How close to the GOAL a robot has to be to load it. Only the lift decides
-// this. The match and the range ring on the field both read it, so what
-// players see is what counts.
+// How close to an upward CELL's mouth a robot has to be to load it. Only the
+// lift decides this. The match and the range ring on the field both read it,
+// so what players see is what counts.
 export function scoreReach(reach: string) {
   return reachProfile(reach).radius;
 }
@@ -180,8 +210,9 @@ export function canFire(score: string, speed: number) {
 
 // Guides on the field come only from assist parts, and each one helps in its
 // own part of the match: Pathfinder routes to the next ARTIFACT (and home to
-// BASE at the end), Auto Align points the way to the GOAL, and Range Finder
-// rings the GOAL instead. With none of those, the field shows no guides at all.
+// BASE at the end), Auto Align points the way to the upward CELL, and Range
+// Finder rings that CELL's loading range instead. With none of those, the
+// field shows no guides at all.
 export function assistGuides(assist: string, kind: 'piece' | 'goal' | 'base') {
   if (assist === 'pathfinder') return kind === 'piece' || kind === 'base';
   if (assist === 'align') return kind === 'goal';
@@ -230,19 +261,24 @@ export function playerTarget(
       collectorTakes(selected.collect, piece.color),
   );
   if (carried.length > 0) {
-    return { kind: 'goal' as const, x: BLUE_GOAL.x, y: BLUE_GOAL.y };
+    // In front of whichever CELL is facing up right now.
+    return {
+      kind: 'goal' as const,
+      ...loadingSpot('blue', world.hives.blue.up),
+    };
   }
 
   const piece = reachable[0] ?? candidates[0];
   return piece ? { ...piece, kind: 'piece' as const } : undefined;
 }
 
-// An ARTIFACT in the GOAL is worth nothing by itself. Load the GOAL to just
-// under half of everything the field holds and it tips over: that scores, and
-// everything inside spills back onto the mats.
+// An ARTIFACT in a CELL is worth nothing by itself. Load the upward CELL until
+// it is heavy enough and the HIVE tips over, as in BIOBUZZ: that scores, the
+// CELL swings down and pours everything it held out onto the mats on its side,
+// and the other CELL swings up to be loaded next - from the other side.
 export const TIP_POINTS = 20;
 
-// NECTAR ('P') are the big ARTIFACTS. They tip a GOAL faster, but they eat
+// NECTAR ('P') are the big ARTIFACTS. They tip a HIVE faster, but they eat
 // two slots in most storage - only the Low Rider Hopper's open bin takes one
 // whole, which is what makes that module worth its small capacity. POLLEN
 // ('G') are the small yellow ones.
@@ -284,9 +320,10 @@ export function canCarry(carried: string[], color: string, carry: string) {
   );
 }
 
-// What a GOAL has to be loaded with before it tips. A flat number rather than
-// a share of the field, so adding ARTIFACTS to the mats makes tipping easier
-// rather than moving the bar with them.
+// What an upward CELL has to be loaded with before its HIVE tips. A flat
+// number rather than a share of the field, so adding ARTIFACTS to the mats
+// makes tipping easier rather than moving the bar with them. The NECTAR a
+// CELL starts the match holding counts toward it too.
 export const GOAL_TIP_AT = 10;
 
 export function goalTips(load: number) {

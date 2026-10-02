@@ -1,32 +1,28 @@
 // Scout-7's steering. Kept apart from the match loop so it can be simulated
 // headlessly: the bot used to drive straight at whatever it wanted, which left
-// it grinding against a GOAL, a wall or the center structure whenever one of
-// them sat in the way.
+// it grinding against whatever stood in the way.
+//
+// The only solid things on the mats are the base bars of the HIVE frame, so
+// every obstacle here is a bar: a line with some thickness either side.
 
 import {
-  BLUE_GOAL,
-  CENTER_STRUCTURE,
+  barContact,
   FIELD_SIZE,
-  GOAL_RADIUS,
-  RED_GOAL,
+  FRAME_BARS,
   ROBOT_MARGIN,
+  type Bar,
 } from './field.ts';
 
 // How far a robot's center stays off a solid object, matching the collision
 // response in `resolveObstacle`.
 export const ROBOT_CLEARANCE = 29;
 
-// Solid round things a robot has to drive around, with the clearance already
-// folded in.
-export const BOT_OBSTACLES = [
-  {
-    x: CENTER_STRUCTURE.x,
-    y: CENTER_STRUCTURE.y,
-    r: CENTER_STRUCTURE.radius + ROBOT_CLEARANCE,
-  },
-  { x: BLUE_GOAL.x, y: BLUE_GOAL.y, r: GOAL_RADIUS + ROBOT_CLEARANCE },
-  { x: RED_GOAL.x, y: RED_GOAL.y, r: GOAL_RADIUS + ROBOT_CLEARANCE },
-];
+// Solid things a robot has to drive around, with the clearance already
+// folded into their thickness.
+export const BOT_OBSTACLES: Bar[] = FRAME_BARS.map((bar) => ({
+  ...bar,
+  r: bar.r + ROBOT_CLEARANCE,
+}));
 
 export type BotMind = {
   // Which way round the obstacle it committed to, so it stops dithering.
@@ -66,32 +62,60 @@ function normalize(x: number, y: number) {
   return length > 0.0001 ? { x: x / length, y: y / length } : { x: 1, y: 0 };
 }
 
+const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+// How close the run from p to q comes to a bar, not counting where it starts:
+// a bot pulling away from a bar it is touching is not blocked by it.
+function pathGap(p: Point, q: Point, bar: Bar) {
+  // Sampled along the run, which is exact enough for steering and far simpler
+  // than the closed form; the bar's two ends are checked exactly below.
+  const start = barContact(bar, p.x, p.y).gap;
+  let best = Infinity;
+  for (let i = 1; i <= 40; i++) {
+    const t = i / 40;
+    const contact = barContact(
+      bar,
+      p.x + (q.x - p.x) * t,
+      p.y + (q.y - p.y) * t,
+    );
+    best = Math.min(best, contact.gap);
+  }
+  if (best >= start - 0.5) return Infinity;
+  for (const end of [
+    { x: bar.ax, y: bar.ay },
+    { x: bar.bx, y: bar.by },
+  ]) {
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const span = dx * dx + dy * dy;
+    const t =
+      span > 0
+        ? Math.max(
+            0,
+            Math.min(1, ((end.x - p.x) * dx + (end.y - p.y) * dy) / span),
+          )
+        : 0;
+    best = Math.min(
+      best,
+      Math.hypot(end.x - (p.x + dx * t), end.y - (p.y + dy * t)) - bar.r,
+    );
+  }
+  return best;
+}
+
 // The obstacle the bot would hit first on a straight run at its target, if any.
-function blockingObstacle(
-  bot: Driver,
-  target: Point,
-  heading: Point,
-  range: number,
-) {
-  let closest = null as (typeof BOT_OBSTACLES)[number] | null;
-  let closestAhead = Infinity;
+function blockingObstacle(bot: Driver, target: Point) {
+  let closest = null as Bar | null;
+  let closestRange = Infinity;
   for (const obstacle of BOT_OBSTACLES) {
-    // Never dodge the thing we are driving to - the GOALS are obstacles, and
-    // the bot's whole job is to get to one of them. Only the object the target
-    // actually sits inside counts, or a target merely parked near a GOAL would
-    // switch avoidance off and the bot would grind along its wall.
-    const reach = Math.hypot(target.x - obstacle.x, target.y - obstacle.y);
-    if (reach <= obstacle.r + 4) continue;
-    const ox = obstacle.x - bot.x;
-    const oy = obstacle.y - bot.y;
-    const ahead = ox * heading.x + oy * heading.y;
-    // Behind us, or further off than the target: not in the way.
-    if (ahead <= 0 || ahead - obstacle.r > range) continue;
-    const offset = Math.abs(ox * heading.y - oy * heading.x);
-    if (offset > obstacle.r + 12) continue;
-    if (ahead < closestAhead) {
+    // A target inside an obstacle is reached by driving up against it, so
+    // that obstacle is not something to steer round.
+    if (barContact(obstacle, target.x, target.y).gap <= 4) continue;
+    if (pathGap(bot, target, obstacle) > 12) continue;
+    const contact = barContact(obstacle, bot.x, bot.y);
+    if (contact.gap < closestRange) {
       closest = obstacle;
-      closestAhead = ahead;
+      closestRange = contact.gap;
     }
   }
   return closest;
@@ -106,25 +130,32 @@ function sideScore(bot: Driver, direct: Point, heading: Point) {
   const near = ROBOT_MARGIN + 10;
   if (lookX < near || lookX > FIELD_SIZE - near) score -= 1.4;
   if (lookY < near || lookY > FIELD_SIZE - near) score -= 1.4;
-  for (const obstacle of BOT_OBSTACLES) {
-    if (Math.hypot(lookX - obstacle.x, lookY - obstacle.y) < obstacle.r + 10)
-      score -= 1.4;
-  }
+  for (const obstacle of BOT_OBSTACLES)
+    if (barContact(obstacle, lookX, lookY).gap < 10) score -= 1.4;
   return score;
 }
 
-// Steer wide of an obstacle by aiming at the edge of its shadow rather than
-// straight through it.
-function steerAround(
-  bot: Driver,
-  obstacle: Point & { r: number },
-  side: number,
-) {
-  const ox = obstacle.x - bot.x;
-  const oy = obstacle.y - bot.y;
-  const range = Math.max(Math.hypot(ox, oy), obstacle.r + 1);
-  const halfWidth = Math.asin(Math.min(1, obstacle.r / range));
-  const angle = Math.atan2(oy, ox) + side * (halfWidth + 0.14);
+// Steer wide of a bar by aiming just past the edge of its shadow: the bar as
+// seen from the bot spans the views of its two rounded ends, so the edges are
+// the outermost tangents to those.
+function steerAround(bot: Driver, bar: Bar, side: number) {
+  const middle = Math.atan2(
+    (bar.ay + bar.by) / 2 - bot.y,
+    (bar.ax + bar.bx) / 2 - bot.x,
+  );
+  let low = Infinity;
+  let high = -Infinity;
+  for (const end of [
+    { x: bar.ax, y: bar.ay },
+    { x: bar.bx, y: bar.by },
+  ]) {
+    const range = Math.max(Math.hypot(end.x - bot.x, end.y - bot.y), bar.r + 1);
+    const half = Math.asin(Math.min(1, bar.r / range));
+    const toward = turn(Math.atan2(end.y - bot.y, end.x - bot.x) - middle);
+    low = Math.min(low, toward - half);
+    high = Math.max(high, toward + half);
+  }
+  const angle = middle + (side > 0 ? high + 0.14 : low - 0.14);
   return { x: Math.cos(angle), y: Math.sin(angle) };
 }
 
@@ -152,17 +183,13 @@ export function botHeading(
   const dx = target.x - bot.x;
   const dy = target.y - bot.y;
   const range = Math.hypot(dx, dy);
-  // A target inside something solid - a GOAL - is reached as soon as the bot
-  // is up against it. Pressing on would only read as being stuck and send it
-  // reversing away from the GOAL it came to score in.
+  // A target inside something solid is reached as soon as the bot is up
+  // against it. Pressing on would only read as being stuck and send it
+  // reversing away from where it meant to be.
   const home = BOT_OBSTACLES.find(
-    (obstacle) =>
-      Math.hypot(target.x - obstacle.x, target.y - obstacle.y) <=
-      obstacle.r + 4,
+    (obstacle) => barContact(obstacle, target.x, target.y).gap <= 4,
   );
-  const docked =
-    home !== undefined &&
-    Math.hypot(bot.x - home.x, bot.y - home.y) <= home.r + 6;
+  const docked = home !== undefined && barContact(home, bot.x, bot.y).gap <= 6;
   if (range <= 7 || docked) {
     mind.stuck = 0;
     mind.dodge = 0;
@@ -176,7 +203,7 @@ export function botHeading(
   }
 
   const direct = normalize(dx, dy);
-  const obstacle = blockingObstacle(bot, target, direct, range);
+  const obstacle = blockingObstacle(bot, target);
   let heading = direct;
   if (obstacle) {
     // Commit to one way round and keep it until the path is clear, so the bot
@@ -194,8 +221,8 @@ export function botHeading(
   heading = slideAlongWalls(bot, heading);
 
   // Progress is measured in ground covered, not in wheel speed: a robot wedged
-  // between a GOAL and the perimeter still reads full speed while going
-  // nowhere, which is exactly the case that used to strand it.
+  // against a bar or the perimeter still reads full speed while going nowhere,
+  // which is exactly the case that used to strand it.
   const moved = Math.hypot(bot.x - mind.lastX, bot.y - mind.lastY);
   mind.lastX = bot.x;
   mind.lastY = bot.y;
@@ -206,17 +233,18 @@ export function botHeading(
     // Take the other way round next time, and reverse out of the pocket by
     // backing away from whatever is nearest.
     mind.dodge = mind.dodge === 0 ? 1 : -mind.dodge;
-    let nearest = BOT_OBSTACLES[0];
+    let away = { x: 0, y: 0 };
     let nearestGap = Infinity;
     for (const candidate of BOT_OBSTACLES) {
-      const gap =
-        Math.hypot(bot.x - candidate.x, bot.y - candidate.y) - candidate.r;
-      if (gap < nearestGap) {
-        nearest = candidate;
-        nearestGap = gap;
+      const contact = barContact(candidate, bot.x, bot.y);
+      if (contact.gap < nearestGap) {
+        nearestGap = contact.gap;
+        away = normalize(bot.x - contact.x, bot.y - contact.y);
       }
     }
-    const away = normalize(bot.x - nearest.x, bot.y - nearest.y);
+    // Nothing solid nearby: it is the perimeter, so head for open mats.
+    if (nearestGap > 40)
+      away = normalize(FIELD_SIZE / 2 - bot.x, FIELD_SIZE / 2 - bot.y);
     mind.recover = RECOVER_FOR;
     mind.recoverX = away.x;
     mind.recoverY = away.y;

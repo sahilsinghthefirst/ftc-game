@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  bouncePlan,
+  BOUNCE_DROP,
   DEFAULT_TURN_RATE,
   driveVelocity,
+  fallTime,
   handlingProfile,
   moveBody,
   rollBalls,
@@ -11,7 +14,10 @@ import {
   spillPlan,
   SPILL_APART,
   SPILL_DRAG,
+  SPILL_DROP,
   SPILL_FAR,
+  SPILL_MOUTH_WIDTH,
+  SPILL_SPREAD,
 } from '../app/robot-physics.ts';
 import {
   intakeTurnRate,
@@ -22,14 +28,22 @@ import {
   BALL_MARGIN,
   BLUE_BASE,
   BLUE_BASE_ZONE,
-  BLUE_GOAL,
-  CENTER_STRUCTURE,
+  barContact,
+  CELL_MOUTH,
+  cellMouth,
+  FIELD_CENTER,
   FIELD_SIZE,
-  GOAL_RADIUS,
+  FRAME_BARS,
+  FRAME_HALF_DEPTH,
+  FRAME_HALF_WIDTH,
+  HIVE_X,
+  INCH,
+  LOAD_FRONT,
   RED_BASE,
   RED_BASE_ZONE,
-  RED_GOAL,
   ROBOT_MARGIN,
+  SPILL_MOUTH,
+  spillMouth,
   TILE,
   TILES,
   inZone,
@@ -214,21 +228,33 @@ test('traction pivots quickest and the six-wheeler far slower than the rest', ()
 test('the field is a square of six by six mats', () => {
   assert.equal(TILES, 6);
   assert.equal(FIELD_SIZE, TILES * TILE);
-  // Every ARTIFACT starts on the mats and clear of the center structure.
-  for (const [x, y] of pieceLayout) {
-    assert.ok(x > BALL_MARGIN && x < FIELD_SIZE - BALL_MARGIN, `x ${x}`);
-    assert.ok(y > BALL_MARGIN && y < FIELD_SIZE - BALL_MARGIN, `y ${y}`);
-    const gap = Math.hypot(x - CENTER_STRUCTURE.x, y - CENTER_STRUCTURE.y);
-    assert.ok(
-      gap > CENTER_STRUCTURE.radius + 14,
-      `piece at ${x},${y} overlaps center`,
-    );
-    for (const goal of [BLUE_GOAL, RED_GOAL])
-      assert.ok(
-        Math.hypot(x - goal.x, y - goal.y) > GOAL_RADIUS + 40,
-        `piece at ${x},${y} sits on a GOAL`,
-      );
+});
+
+test('every ARTIFACT starts in a row against the wall, as in BIOBUZZ', () => {
+  const radiusOf = (color) => (color === 'P' ? 18 : 14);
+  for (const [x, y, color] of pieceLayout) {
+    const radius = radiusOf(color);
+    // Inside the walls, but touching distance from one of them.
+    const near = BALL_MARGIN + radius - 14;
+    assert.ok(x >= near && x <= FIELD_SIZE - near, `x ${x}`);
+    assert.ok(y >= near && y <= FIELD_SIZE - near, `y ${y}`);
+    const toWall = Math.min(x, y, FIELD_SIZE - x, FIELD_SIZE - y);
+    assert.ok(toWall <= near + 2, `piece at ${x},${y} is out in the open`);
   }
+  // No two balls start overlapping, so the rows sit still.
+  for (let i = 0; i < pieceLayout.length; i++)
+    for (let j = i + 1; j < pieceLayout.length; j++) {
+      const [ax, ay, ac] = pieceLayout[i];
+      const [bx, by, bc] = pieceLayout[j];
+      assert.ok(
+        Math.hypot(ax - bx, ay - by) >= radiusOf(ac) + radiusOf(bc),
+        `${ax},${ay} overlaps ${bx},${by}`,
+      );
+    }
+  // BIOBUZZ's 40 POLLEN all start on the mats; 10 of the 16 NECTAR do, and
+  // the other six start inside the HIVES.
+  assert.equal(pieceLayout.filter(([, , color]) => color === 'G').length, 40);
+  assert.equal(pieceLayout.filter(([, , color]) => color === 'P').length, 10);
 });
 
 test('each BASE is the whole mat in its bottom corner, flush with the walls', () => {
@@ -260,82 +286,87 @@ test('each BASE is the whole mat in its bottom corner, flush with the walls', ()
   assert.ok(!inZone(BLUE_BASE, RED_BASE_ZONE));
 });
 
-test('the GOALS stand right against the center structure, blue left and red right', () => {
-  for (const goal of [BLUE_GOAL, RED_GOAL])
-    assert.equal(goal.y, CENTER_STRUCTURE.y);
-  assert.ok(BLUE_GOAL.x < CENTER_STRUCTURE.x);
-  assert.ok(RED_GOAL.x > CENTER_STRUCTURE.x);
-  assert.equal(
-    CENTER_STRUCTURE.x - BLUE_GOAL.x,
-    RED_GOAL.x - CENTER_STRUCTURE.x,
-  );
-  // Touching the structure: no gap a robot or even an ARTIFACT could slip
-  // through. Behind each GOAL there is still a wide lane to the wall.
+test('the HIVE structure is laid out like BIOBUZZ, blue left and red right', () => {
+  // Built to the manual at 3.75 field units to the inch.
+  assert.equal(INCH, 3.75);
+  assert.ok(Math.abs(HIVE_X.red - HIVE_X.blue - 25.5 * INCH) < 1e-9);
+  assert.ok(HIVE_X.blue < FIELD_CENTER && HIVE_X.red > FIELD_CENTER);
+  assert.equal(FIELD_CENTER - HIVE_X.blue, HIVE_X.red - FIELD_CENTER);
+  // A CELL at each end of each HIVE, mirrored across the crossbar.
+  for (const alliance of ['blue', 'red'])
+    for (const end of [1, -1]) {
+      const mouth = cellMouth(alliance, end);
+      assert.equal(mouth.x, HIVE_X[alliance]);
+      assert.equal(mouth.y - FIELD_CENTER, end * CELL_MOUTH);
+      // A CELL tipped down hangs further out than one tipped up.
+      assert.ok(SPILL_MOUTH > CELL_MOUTH);
+      // A robot loads from out in front of the frame, past the mouth.
+      assert.ok(LOAD_FRONT > CELL_MOUTH && LOAD_FRONT > FRAME_HALF_DEPTH);
+    }
+  // The A-frames stand outside both HIVES with a robot-wide lane under the
+  // middle and another between each A-frame and the wall.
   const robot = 2 * ROBOT_CLEARANCE + 20;
-  for (const goal of [BLUE_GOAL, RED_GOAL]) {
-    const toCenter =
-      Math.abs(goal.x - CENTER_STRUCTURE.x) -
-      GOAL_RADIUS -
-      CENTER_STRUCTURE.radius;
-    const toWall = Math.min(goal.x, FIELD_SIZE - goal.x) - GOAL_RADIUS;
-    assert.ok(toCenter >= 0, 'GOAL overlaps the center structure');
-    assert.ok(toCenter < 10, `${toCenter} between GOAL and center`);
-    assert.ok(toWall > robot, `only ${toWall} behind the GOAL`);
+  for (const bar of FRAME_BARS) {
+    const toCenter = Math.abs(bar.ax - FIELD_CENTER) - bar.r;
+    const toWall = Math.min(bar.ax, FIELD_SIZE - bar.ax) - bar.r;
+    assert.ok(
+      Math.abs(Math.abs(bar.ax - FIELD_CENTER) - FRAME_HALF_WIDTH) < 1e-9,
+    );
+    assert.ok(toCenter * 2 > robot, 'no lane under the HIVES');
+    assert.ok(toWall > robot, `only ${toWall} beside the frame`);
   }
 });
 
-test('every spilled ARTIFACT lands on open mats, thrown just hard enough', () => {
-  let seed = 7;
-  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (const goal of [BLUE_GOAL, RED_GOAL]) {
-    for (let tip = 0; tip < 120; tip += 1) {
-      const shots = spillPlan(goal, 10, random);
-      assert.equal(shots.length, 10);
-      for (const shot of shots) {
-        assert.ok(
-          shot.landX > BALL_MARGIN && shot.landX < FIELD_SIZE - BALL_MARGIN,
-        );
-        assert.ok(
-          shot.landY > BALL_MARGIN && shot.landY < FIELD_SIZE - BALL_MARGIN,
-        );
-        // Never thrown into the center structure the GOAL leans on, nor at
-        // the other GOAL.
-        assert.ok(
-          Math.hypot(
-            shot.landX - CENTER_STRUCTURE.x,
-            shot.landY - CENTER_STRUCTURE.y,
-          ) >
-            CENTER_STRUCTURE.radius + 20,
-          `landed in the center at ${shot.landX},${shot.landY}`,
-        );
-        const other = goal === BLUE_GOAL ? RED_GOAL : BLUE_GOAL;
-        assert.ok(
-          Math.hypot(shot.landX - other.x, shot.landY - other.y) >
-            GOAL_RADIUS + 20,
-        );
-        // Launched at the speed that settles it on its spot.
-        const reach = Math.hypot(shot.landX - goal.x, shot.landY - goal.y);
-        const launch = Math.hypot(shot.vx, shot.vy);
-        assert.ok(
-          Math.abs(launch / SPILL_DRAG - (reach - GOAL_RADIUS - 22)) < 1,
-        );
-        assert.ok(reach <= SPILL_FAR);
+// Seeded so a failure can be replayed.
+function lcg(seed) {
+  return () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+}
+
+test('a tipped CELL pours out only on its own side, onto open mats', () => {
+  const random = lcg(7);
+  for (const alliance of ['blue', 'red'])
+    for (const end of [1, -1]) {
+      const mouth = spillMouth(alliance, end);
+      for (let tip = 0; tip < 80; tip += 1) {
+        const shots = spillPlan(mouth, end, 10, random);
+        assert.equal(shots.length, 10);
+        for (const shot of shots) {
+          // Out of the open end, from somewhere across the mouth.
+          assert.equal(shot.y, mouth.y);
+          assert.ok(Math.abs(shot.x - mouth.x) <= SPILL_MOUTH_WIDTH / 2);
+          // Heading out on that side, never back under the HIVE.
+          assert.ok(shot.vy * end > 0, 'thrown back under the HIVE');
+          assert.ok((shot.landY - FIELD_CENTER) * end > SPILL_MOUTH);
+          assert.ok(
+            shot.landX > BALL_MARGIN && shot.landX < FIELD_SIZE - BALL_MARGIN,
+          );
+          assert.ok(
+            shot.landY > BALL_MARGIN && shot.landY < FIELD_SIZE - BALL_MARGIN,
+          );
+          for (const bar of FRAME_BARS)
+            assert.ok(barContact(bar, shot.landX, shot.landY).gap > 14);
+          // Launched at the speed that settles it on its spot.
+          const reach = Math.hypot(shot.landX - shot.x, shot.landY - shot.y);
+          const launch = Math.hypot(shot.vx, shot.vy);
+          assert.ok(Math.abs(launch / SPILL_DRAG - reach) < 1);
+          assert.ok(reach <= SPILL_FAR);
+        }
       }
     }
-  }
 });
 
-test('spilled ARTIFACTS scatter in random directions, away from each other', () => {
-  let seed = 11;
-  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+test('a pour fans out across that side of the field, away from each other', () => {
+  const random = lcg(11);
   const tips = 200;
-  let upField = 0;
-  let downField = 0;
+  let left = 0;
+  let right = 0;
   const firstOut = new Set();
   let sweeps = 0;
+  const mouth = spillMouth('blue', 1);
   for (let tip = 0; tip < tips; tip += 1) {
-    const shots = spillPlan(BLUE_GOAL, 10, random);
-    // Never clumped: every landing spot keeps its distance from the rest.
+    const shots = spillPlan(mouth, 1, 10, random);
+    // Never clumped: half a field is less room than the old all-round
+    // scatter had, but landing spots still keep well apart.
     for (let i = 0; i < shots.length; i += 1)
       for (let j = i + 1; j < shots.length; j += 1)
         assert.ok(
@@ -343,38 +374,81 @@ test('spilled ARTIFACTS scatter in random directions, away from each other', () 
             shots[i].landX - shots[j].landX,
             shots[i].landY - shots[j].landY,
           ) >=
-            SPILL_APART - 1,
+            SPILL_APART * 0.75,
           'two ARTIFACTS landed on top of each other',
         );
-    // Fanned all round the GOAL: headings from one tip cover most of the
-    // open directions, leaving no wide hole. Measured from straight away
-    // from the center structure, which the open arc is centered on.
-    const turn = shots.map((shot) => Math.atan2(-shot.vy, -shot.vx));
+    // Fanned across the whole open side: headings from one tip cover most of
+    // the fan, leaving no wide hole.
+    const turn = shots.map((shot) => Math.atan2(shot.vx, shot.vy));
     const sorted = [...turn].sort((a, b) => a - b);
-    assert.ok(sorted.at(-1) - sorted[0] > 3, 'the fan is too narrow');
+    assert.ok(sorted.at(-1) - sorted[0] > SPILL_SPREAD * 1.4, 'too narrow');
     for (let i = 1; i < sorted.length; i += 1)
-      assert.ok(sorted[i] - sorted[i - 1] < 1, 'a hole in the fan');
+      assert.ok(sorted[i] - sorted[i - 1] < 0.7, 'a hole in the fan');
     // Strength is random per ARTIFACT, so throws in one tip differ widely.
     const reaches = shots.map((shot) =>
-      Math.hypot(shot.landX - BLUE_GOAL.x, shot.landY - BLUE_GOAL.y),
+      Math.hypot(shot.landX - shot.x, shot.landY - shot.y),
     );
     assert.ok(Math.max(...reaches) > Math.min(...reaches) * 1.5);
     for (const shot of shots)
-      if (shot.landY < BLUE_GOAL.y) upField += 1;
-      else downField += 1;
+      if (shot.landX < mouth.x) left += 1;
+      else right += 1;
     // Released one after another, at uneven intervals and in no set order.
     const gaps = shots.slice(1).map((shot, i) => shot.delay - shots[i].delay);
     assert.equal(shots[0].delay, 0);
     assert.ok(gaps.every((gap) => gap > 0.04 && gap < 0.2));
-    firstOut.add(Math.round(turn[0] * 2));
+    firstOut.add(Math.round(turn[0] * 3));
     if (turn.every((angle, i) => i === 0 || angle >= turn[i - 1])) sweeps += 1;
   }
-  // No favourite direction: up the field and down it are mirror images round
-  // this GOAL, so they should come up about equally often.
-  const upShare = upField / (upField + downField);
-  assert.ok(upShare > 0.4 && upShare < 0.6, `${upField} up, ${downField} down`);
+  // No favourite side within the fan.
+  const leftShare = left / (left + right);
+  assert.ok(leftShare > 0.4 && leftShare < 0.6, `${left} left, ${right} right`);
   assert.ok(firstOut.size >= 5, 'the first one out always goes the same way');
   assert.ok(sweeps < tips * 0.05, `${sweeps} of ${tips} tips swept in order`);
+});
+
+test('a shot that bounces off the rim drops out of the mouth, back toward the shooter', () => {
+  const random = lcg(5);
+  for (const end of [1, -1]) {
+    const mouth = cellMouth('red', end);
+    for (let i = 0; i < 50; i += 1) {
+      const shot = bouncePlan(mouth, end, random);
+      assert.equal(shot.x, mouth.x);
+      assert.equal(shot.y, mouth.y);
+      assert.ok(shot.vy * end > 0);
+      const reach = Math.hypot(shot.landX - shot.x, shot.landY - shot.y);
+      assert.ok(reach > 20 && reach <= 150, `bounced ${reach.toFixed(0)}`);
+    }
+  }
+});
+
+test('a falling ARTIFACT touches nothing until it lands', () => {
+  // A dropped ball falls in about the time a real one would.
+  assert.ok(Math.abs(fallTime(SPILL_DROP) - 0.44) < 0.02);
+  assert.ok(fallTime(BOUNCE_DROP) > fallTime(SPILL_DROP));
+  // Dropped straight onto a robot: it passes over it while still falling...
+  const robot = { ...body(), x: 300, y: 300 };
+  const ball = { x: 300, y: 300, vx: 0, vy: 0, active: true, air: 0.2 };
+  rollBalls([ball], [robot], step);
+  assert.equal(ball.x, 300);
+  assert.equal(ball.y, 300);
+  assert.ok(ball.air < 0.2);
+  // ...and is bumped clear the moment it lands.
+  ball.air = 0;
+  rollBalls([ball], [robot], step);
+  assert.ok(Math.hypot(ball.x - 300, ball.y - 300) >= 41);
+});
+
+test('the A-frame base bars stop loose ARTIFACTS', () => {
+  const [bar] = FRAME_BARS;
+  const ball = {
+    x: bar.ax + 60,
+    y: FIELD_CENTER,
+    vx: -500,
+    vy: 0,
+    active: true,
+  };
+  for (let frame = 0; frame < 120; frame += 1) rollBalls([ball], [], step);
+  assert.ok(ball.x >= bar.ax + bar.r + 14 - 1e-6, 'it went through the bar');
 });
 
 test('a spilled ARTIFACT rolls out to about where it was aimed', () => {

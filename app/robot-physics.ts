@@ -1,11 +1,11 @@
 import {
   BALL_MARGIN,
-  BLUE_GOAL,
-  CENTER_STRUCTURE,
+  barContact,
   FIELD_SIZE,
-  GOAL_RADIUS,
-  RED_GOAL,
+  FRAME_BARS,
+  INCH,
   ROBOT_MARGIN,
+  type CellEnd,
 } from './field.ts';
 import { BOT_OBSTACLES } from './bot-driver.ts';
 
@@ -13,7 +13,7 @@ import { BOT_OBSTACLES } from './bot-driver.ts';
 // drag x distance coasts almost exactly that far before it settles.
 // `rollDistance` and `rollSpeed` convert between the two.
 export const BALL_DRAG = 3.8;
-// ARTIFACTS spilling out of a tipped GOAL roll on a much gentler curve: they
+// ARTIFACTS spilling out of a tipped HIVE roll on a much gentler curve: they
 // leave at under a quarter of the speed a normal nudge would need and glide a
 // long way before stopping, so they spread across the mats without looking
 // flung.
@@ -28,21 +28,37 @@ export function rollDistance(speed: number, drag = BALL_DRAG) {
   return speed / drag;
 }
 
-// A tipped GOAL scatters its ARTIFACTS: each one rolls off in its own random
-// direction, as hard or soft as chance decides, and they spread away from each
-// other across the mats instead of clumping in one spot. Every open direction
-// is equally likely, and the order they come out in is shuffled too.
+// Seconds an ARTIFACT takes to drop to the mats from `inches` up. While it
+// falls it carries on outward but touches nothing.
+export function fallTime(inches: number) {
+  return Math.sqrt((2 * inches * 0.0254) / 9.81);
+}
+// How high a downward CELL's open end hangs, and the upward one's.
+export const SPILL_DROP = 37.5;
+export const BOUNCE_DROP = 59;
+
+// When a HIVE tips, the CELL that was up swings down and pours out of its
+// open end, so everything it held comes out on that side of the HIVE only.
+// Each ARTIFACT falls from somewhere across the mouth, then rolls off in its
+// own direction inside a wide fan pointing straight out, as hard or soft as
+// chance decides, and they spread away from each other across that half of
+// the field instead of clumping. The order they come out in is shuffled too.
 export const SPILL_FAR = 1050;
-export const SPILL_RIM = GOAL_RADIUS + 22;
-const SPILL_LANES = 120;
+// Half the width of the fan, either side of straight out.
+export const SPILL_SPREAD = 1.15;
+// How far across the mouth an ARTIFACT can tumble out from its center.
+export const SPILL_MOUTH_WIDTH = 8 * INCH;
+// Nothing rolls out less than this far: it falls clear of the CELL first.
+export const SPILL_MIN = 40;
+const SPILL_LANES = 60;
 // How hard an ARTIFACT is thrown, as a share of the clear run its way.
 const SPILL_POWER = [0.2, 1] as const;
 // Landing spots closer than this to one already taken are drawn again.
-export const SPILL_APART = 110;
+export const SPILL_APART = 100;
 const SPILL_TRIES = 16;
 
 export type SpillShot = {
-  // Where the ARTIFACT leaves the rim, and how fast.
+  // Where the ARTIFACT drops from the mouth, and how fast it is going.
   x: number;
   y: number;
   vx: number;
@@ -50,69 +66,55 @@ export type SpillShot = {
   // Where it will settle.
   landX: number;
   landY: number;
-  // Seconds after the tip before it rolls out.
+  // Seconds after the tip before it falls out.
   delay: number;
 };
 
-// Plan the roll-out for every ARTIFACT a GOAL was holding. The open directions
-// are split into one slice per ARTIFACT, so they fan out all round the GOAL,
-// and each takes a random direction inside its own slice at a random strength.
-// No ARTIFACT is aimed past a wall, the center structure or the other GOAL.
+type Point = { x: number; y: number };
+const edge = BALL_MARGIN + 34;
+
+// How far an ARTIFACT can roll straight out from `from` along `angle` before
+// it would meet a wall or a frame bar.
+function room(from: Point, angle: number, limit = SPILL_FAR) {
+  let clear = 0;
+  for (let reach = 0; reach <= limit; reach += 8) {
+    const x = from.x + Math.cos(angle) * reach;
+    const y = from.y + Math.sin(angle) * reach;
+    if (x < edge || x > FIELD_SIZE - edge || y < edge || y > FIELD_SIZE - edge)
+      break;
+    if (FRAME_BARS.some((bar) => barContact(bar, x, y).gap < BALL_RADIUS + 6))
+      break;
+    clear = reach;
+  }
+  return clear;
+}
+
+// Plan the pour for every ARTIFACT a tipping CELL was holding. `mouth` is the
+// middle of its open end and `end` the side of the HIVE it is on. The fan is
+// split into one slice per ARTIFACT, so they cover the whole of it, and each
+// takes a random direction inside its own slice at a random strength. No
+// ARTIFACT is aimed past a wall or into the frame.
 export function spillPlan(
-  goal: { x: number; y: number },
+  mouth: Point,
+  end: CellEnd,
   count: number,
   random = Math.random,
 ): SpillShot[] {
-  const edge = BALL_MARGIN + 34;
-  const blocked = [
-    {
-      x: CENTER_STRUCTURE.x,
-      y: CENTER_STRUCTURE.y,
-      r: CENTER_STRUCTURE.radius + 40,
-    },
-    ...[BLUE_GOAL, RED_GOAL]
-      .filter((other) => other.x !== goal.x || other.y !== goal.y)
-      .map((other) => ({ x: other.x, y: other.y, r: GOAL_RADIUS + 60 })),
-  ];
-  // How far an ARTIFACT can roll straight out along `angle` before it would
-  // meet a wall or something solid.
-  const room = (angle: number) => {
-    let clear = SPILL_RIM;
-    for (let reach = SPILL_RIM; reach <= SPILL_FAR; reach += 8) {
-      const x = goal.x + Math.cos(angle) * reach;
-      const y = goal.y + Math.sin(angle) * reach;
-      if (
-        x < edge ||
-        x > FIELD_SIZE - edge ||
-        y < edge ||
-        y > FIELD_SIZE - edge
-      )
-        break;
-      if (blocked.some((spot) => Math.hypot(x - spot.x, y - spot.y) < spot.r))
-        break;
-      clear = reach;
-    }
-    return clear;
-  };
-  const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
-  // Open lanes, in order round the GOAL starting from the side facing away
-  // from the center structure, so each slice below is one unbroken arc.
-  const away = Math.atan2(
-    goal.y - CENTER_STRUCTURE.y,
-    goal.x - CENTER_STRUCTURE.x,
-  );
+  const facing = end > 0 ? Math.PI / 2 : -Math.PI / 2;
+  // Open lanes, in order across the fan, so each slice below is one arc.
   const lanes: { angle: number; clear: number }[] = [];
   for (let lane = 0; lane < SPILL_LANES; lane += 1) {
-    const angle = turn(away + Math.PI + (lane / SPILL_LANES) * Math.PI * 2);
-    const clear = room(angle);
-    if (clear >= SPILL_RIM + 80) lanes.push({ angle, clear });
+    const angle =
+      facing - SPILL_SPREAD + ((lane + 0.5) / SPILL_LANES) * SPILL_SPREAD * 2;
+    const clear = room(mouth, angle);
+    if (clear >= SPILL_MIN + 60) lanes.push({ angle, clear });
   }
-  // Nowhere to go at all: set them down on the rim rather than fail the tip.
-  if (lanes.length === 0) lanes.push({ angle: Math.PI / 2, clear: SPILL_RIM });
+  // Nowhere to go at all: drop them straight out rather than fail the tip.
+  if (lanes.length === 0) lanes.push({ angle: facing, clear: SPILL_MIN });
 
-  const width = (Math.PI * 2) / SPILL_LANES;
+  const width = (SPILL_SPREAD * 2) / SPILL_LANES;
   const [weakest, strongest] = SPILL_POWER;
-  const landings: { x: number; y: number }[] = [];
+  const landings: Point[] = [];
   // A random throw somewhere inside the given slice of lanes.
   const throwInto = (slice: number) => {
     const first = Math.floor((slice / count) * lanes.length);
@@ -122,18 +124,24 @@ export function spillPlan(
     );
     const lane = lanes[first + Math.floor(random() * (last - first))];
     const angle = lane.angle + (random() - 0.5) * width;
-    const clear = Math.min(lane.clear, room(angle));
+    // Tumbling out somewhere across the mouth, not all from its middle -
+    // unless that edge of the mouth is aimed straight at the frame.
+    const across = (random() - 0.5) * SPILL_MOUTH_WIDTH;
+    let start = { x: mouth.x + across, y: mouth.y };
+    if (room(start, angle) < SPILL_MIN) start = { ...mouth };
+    const clear = Math.min(lane.clear, room(start, angle));
     const share = weakest + random() * (strongest - weakest);
-    const reach = Math.max(SPILL_RIM, clear * share);
+    const reach = Math.min(clear, Math.max(SPILL_MIN, clear * share));
     return {
       angle,
       reach,
-      x: goal.x + Math.cos(angle) * reach,
-      y: goal.y + Math.sin(angle) * reach,
+      start,
+      x: start.x + Math.cos(angle) * reach,
+      y: start.y + Math.sin(angle) * reach,
     };
   };
   // How close a landing spot comes to any already taken.
-  const crowding = (spot: { x: number; y: number }) =>
+  const crowding = (spot: Point) =>
     landings.reduce(
       (closest, other) =>
         Math.min(closest, Math.hypot(spot.x - other.x, spot.y - other.y)),
@@ -156,11 +164,11 @@ export function spillPlan(
       if (crowding(next) > crowding(best)) best = next;
     }
     landings.push(best);
-    const { angle, reach } = best;
-    const launch = rollSpeed(reach - SPILL_RIM, SPILL_DRAG);
+    const { angle, reach, start } = best;
+    const launch = rollSpeed(reach, SPILL_DRAG);
     const shot = {
-      x: goal.x + Math.cos(angle) * SPILL_RIM,
-      y: goal.y + Math.sin(angle) * SPILL_RIM,
+      x: start.x,
+      y: start.y,
       vx: Math.cos(angle) * launch,
       vy: Math.sin(angle) * launch,
       landX: best.x,
@@ -172,6 +180,27 @@ export function spillPlan(
   });
 }
 
+// A shot that bounces off the rim of an upward CELL: it drops back out of the
+// mouth and rolls a short way out toward the robot that fired it.
+export function bouncePlan(
+  mouth: Point,
+  end: CellEnd,
+  random = Math.random,
+): SpillShot {
+  const angle = (end > 0 ? Math.PI / 2 : -Math.PI / 2) + (random() - 0.5) * 1.2;
+  const reach = Math.min(room(mouth, angle), 60 + random() * 90);
+  const launch = rollSpeed(reach, SPILL_DRAG);
+  return {
+    x: mouth.x,
+    y: mouth.y,
+    vx: Math.cos(angle) * launch,
+    vy: Math.sin(angle) * launch,
+    landX: mouth.x + Math.cos(angle) * reach,
+    landY: mouth.y + Math.sin(angle) * reach,
+    delay: 0,
+  };
+}
+
 type Body = { x: number; y: number; vx: number; vy: number; angle: number };
 type Ball = {
   x: number;
@@ -181,6 +210,8 @@ type Ball = {
   active: boolean;
   radius?: number;
   spill?: boolean;
+  // Seconds left falling to the mats; nothing touches it till it lands.
+  air?: number;
 };
 
 // Handling is the workshop trait that decides how hard a drivetrain can change
@@ -273,6 +304,12 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
     ball.vy = (ball.vy ?? 0) * Math.exp(-drag * dt);
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
+    // Still falling out of a CELL: over the robots and the frame, so the
+    // first thing it can meet is the mats.
+    if (ball.air) {
+      ball.air = Math.max(0, ball.air - dt);
+      continue;
+    }
     // Once a spilled ARTIFACT has settled it is an ordinary loose ball again.
     if (ball.spill && Math.hypot(ball.vx, ball.vy) < 14) ball.spill = false;
     for (const robot of robots) {
@@ -292,24 +329,17 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
       ball.vx += nx * impulse * 1.15;
       ball.vy += ny * impulse * 1.15;
     }
-    for (const obstacle of [
-      {
-        x: CENTER_STRUCTURE.x,
-        y: CENTER_STRUCTURE.y,
-        r: CENTER_STRUCTURE.radius,
-      },
-      { x: BLUE_GOAL.x, y: BLUE_GOAL.y, r: GOAL_RADIUS },
-      { x: RED_GOAL.x, y: RED_GOAL.y, r: GOAL_RADIUS },
-    ]) {
-      const dx = ball.x - obstacle.x,
-        dy = ball.y - obstacle.y;
+    for (const bar of FRAME_BARS) {
+      const contact = barContact(bar, ball.x, ball.y);
+      if (contact.gap >= size) continue;
+      const dx = ball.x - contact.x,
+        dy = ball.y - contact.y;
       const d = Math.hypot(dx, dy),
-        radius = obstacle.r + size;
-      if (d >= radius) continue;
+        radius = bar.r + size;
       const nx = d > 0.001 ? dx / d : 1,
         ny = d > 0.001 ? dy / d : 0;
-      ball.x = obstacle.x + nx * radius;
-      ball.y = obstacle.y + ny * radius;
+      ball.x = contact.x + nx * radius;
+      ball.y = contact.y + ny * radius;
       const impact = Math.min(0, ball.vx * nx + ball.vy * ny);
       ball.vx -= 1.35 * impact * nx;
       ball.vy -= 1.35 * impact * ny;
@@ -329,6 +359,7 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i],
         b = active[j];
+      if (a.air || b.air) continue;
       const dx = b.x - a.x,
         dy = b.y - a.y,
         d = Math.hypot(dx, dy);
@@ -353,18 +384,21 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
     }
 }
 
-// Push a robot out of the solid round objects on the field and kill the part of
-// its velocity that was driving into them.
+// Push a robot out of the solid bars on the field and kill the part of its
+// velocity that was driving into them.
 export function resolveObstacle(robot: Body) {
   for (const obstacle of BOT_OBSTACLES) {
-    const dx = robot.x - obstacle.x;
-    const dy = robot.y - obstacle.y;
+    const contact = barContact(obstacle, robot.x, robot.y);
+    if (contact.gap >= 0) continue;
+    const dx = robot.x - contact.x;
+    const dy = robot.y - contact.y;
     const d = Math.hypot(dx, dy);
-    if (d >= obstacle.r) continue;
-    const nx = dx / Math.max(d, 1);
-    const ny = dy / Math.max(d, 1);
-    robot.x = obstacle.x + nx * obstacle.r;
-    robot.y = obstacle.y + ny * obstacle.r;
+    // Dead on the bar's line: push out sideways, away from the field center.
+    const side = robot.x < FIELD_SIZE / 2 ? -1 : 1;
+    const nx = d > 0.001 ? dx / d : side;
+    const ny = d > 0.001 ? dy / d : 0;
+    robot.x = contact.x + nx * obstacle.r;
+    robot.y = contact.y + ny * obstacle.r;
     const dot = robot.vx * nx + robot.vy * ny;
     if (dot < 0) {
       robot.vx -= dot * nx;

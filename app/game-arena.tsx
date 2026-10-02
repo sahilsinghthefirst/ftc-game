@@ -17,32 +17,43 @@ import { botHeading, createBotMind } from './bot-driver';
 import {
   BLUE_BASE,
   BLUE_BASE_ZONE,
-  BLUE_GOAL,
-  CENTER_STRUCTURE,
+  CELL_PRELOAD,
+  cellMouth,
+  FIELD_CENTER,
+  HIVE_START_UP,
   RED_BASE,
   RED_BASE_ZONE,
-  RED_GOAL,
   inZone,
+  loadingSpot,
+  spillMouth,
   type Alliance,
+  type CellEnd,
   pieceLayout,
 } from './field';
 import {
+  bouncePlan,
+  BOUNCE_DROP,
   driveVelocity,
+  fallTime,
   handlingProfile,
   moveBody,
   rollBalls,
   resolveObstacle,
   spillPlan,
+  SPILL_DROP,
   BALL_RADIUS,
 } from './robot-physics';
 import {
   canCarry,
   carryCapacity,
+  cellSide,
   mayCollect,
   collectProfile,
   collectorTakes,
   goalTips,
   GOAL_TIP_AT,
+  inLoadingRange,
+  NECTAR_TIP_VALUE,
   TIP_POINTS,
   tipValue,
   intakeTurnRate,
@@ -77,8 +88,9 @@ type ArenaProps = {
 
 type PieceColor = 'P' | 'G';
 // An ARTIFACT is in exactly one place: loose on the mats (`active`), held by a
-// robot (inactive with a `collector`), or sitting in a GOAL (`stored`). Only
-// the stored ones spill when that GOAL tips.
+// robot (inactive with a `collector`), or sitting in one of a HIVE's CELLS
+// (`stored`, with the `cell` it is in). Only what is in a CELL pours out
+// when that CELL tips down.
 type Piece = {
   id: number;
   x: number;
@@ -91,15 +103,30 @@ type Piece = {
   vy?: number;
   collector?: 'player' | 'bot';
   stored?: 'player' | 'bot';
+  cell?: CellEnd;
   radius: number;
   px: number;
   py: number;
   spill?: boolean;
   // Seconds before a freshly spilled ARTIFACT can be picked up.
   grace?: number;
-  // Queued spill: an ARTIFACT waiting its turn to roll out of a GOAL.
-  release?: { delay: number; x: number; y: number; vx: number; vy: number };
+  // Seconds left falling from a CELL to the mats, and the height in inches
+  // it fell from, so the scene can draw the drop.
+  air?: number;
+  drop?: number;
+  // Queued pour: an ARTIFACT waiting its turn to fall out of a CELL.
+  release?: {
+    delay: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    drop: number;
+  };
 };
+// One alliance's HIVE: which CELL faces up, how much is loaded into it, and
+// how many times it has tipped.
+export type HiveState = { up: CellEnd; load: number; tips: number };
 type Robot = {
   // Pose at the previous physics step, so the renderer can interpolate between
   // steps instead of showing the fixed-timestep lumps.
@@ -137,11 +164,7 @@ export type World = {
   botScore: number;
   collected: number;
   scored: number;
-  // ARTIFACTs sitting in each GOAL, and how many times the blue GOAL has
-  // tipped. A GOAL empties itself onto the mats every time it tips.
-  playerGoal: number;
-  botGoal: number;
-  tips: number;
+  hives: Record<Alliance, HiveState>;
   botThink: number;
   botTarget: { x: number; y: number };
   botIntent: string;
@@ -158,6 +181,7 @@ type Hud = {
   botIntent: string;
   finalSeconds: boolean;
   goalLoad: number;
+  cellUp: CellEnd;
 };
 
 const MATCH_TIME = 60;
@@ -198,42 +222,55 @@ function createWorld(): World {
     intake: 0,
     cooldown: 0,
   };
+  const onMats: Piece[] = pieceLayout.map(([x, y, color, alliance], id) => ({
+    id,
+    x,
+    y,
+    px: x,
+    py: y,
+    color,
+    alliance,
+    active: true,
+    radius: color === 'P' ? NECTAR_BALL_RADIUS : BALL_RADIUS,
+  }));
+  // Each HIVE's upward CELL starts holding three of its alliance's NECTAR.
+  const preloads = (['blue', 'red'] as const).flatMap((alliance) =>
+    Array.from({ length: CELL_PRELOAD }, (): Piece => {
+      const mouth = cellMouth(alliance, HIVE_START_UP);
+      return {
+        id: 0,
+        x: mouth.x,
+        y: mouth.y,
+        px: mouth.x,
+        py: mouth.y,
+        color: 'P',
+        alliance,
+        active: false,
+        stored: alliance === 'blue' ? 'player' : 'bot',
+        cell: HIVE_START_UP,
+        radius: NECTAR_BALL_RADIUS,
+      };
+    }),
+  );
+  preloads.forEach((piece, index) => (piece.id = onMats.length + index));
+  const hive = (): HiveState => ({
+    up: HIVE_START_UP,
+    load: CELL_PRELOAD * NECTAR_TIP_VALUE,
+    tips: 0,
+  });
   return {
     player: { ...player, px: player.x, py: player.y, pangle: player.angle },
     bot: { ...bot, px: bot.x, py: bot.y, pangle: bot.angle },
-    pieces: pieceLayout.map(([x, y, color, alliance], id) => {
-      // Nudge anything that starts inside the center structure back out.
-      const dx = x - CENTER_STRUCTURE.x,
-        dy = y - CENTER_STRUCTURE.y,
-        radius = Math.hypot(dx, dy);
-      const clear = CENTER_STRUCTURE.radius + 29;
-      const spotX =
-        radius < clear ? CENTER_STRUCTURE.x + (dx / radius) * clear : x;
-      const spotY =
-        radius < clear ? CENTER_STRUCTURE.y + (dy / radius) * clear : y;
-      return {
-        id,
-        x: spotX,
-        y: spotY,
-        px: spotX,
-        py: spotY,
-        color,
-        alliance,
-        active: true,
-        radius: color === 'P' ? NECTAR_BALL_RADIUS : BALL_RADIUS,
-      };
-    }),
+    pieces: [...onMats, ...preloads],
     particles: [],
     time: MATCH_TIME,
     playerScore: 0,
     botScore: 0,
     collected: 0,
     scored: 0,
-    playerGoal: 0,
-    botGoal: 0,
-    tips: 0,
+    hives: { blue: hive(), red: hive() },
     botThink: 0,
-    botTarget: { x: CENTER_STRUCTURE.x, y: CENTER_STRUCTURE.y },
+    botTarget: { x: FIELD_CENTER, y: FIELD_CENTER },
     botIntent: 'Scanning the field',
     finished: false,
   };
@@ -274,8 +311,9 @@ function emitBurst(
     });
 }
 
-// Move ARTIFACTS a robot was carrying into its GOAL. They stay off the mats,
-// but they now belong to the GOAL rather than to the robot.
+const allianceOf = (side: 'player' | 'bot'): Alliance =>
+  side === 'player' ? 'blue' : 'red';
+
 // The ARTIFACT of a given colour a robot is holding, if any.
 function heldPiece(world: World, side: 'player' | 'bot', color: PieceColor) {
   return world.pieces.find(
@@ -288,61 +326,81 @@ function heldPiece(world: World, side: 'player' | 'bot', color: PieceColor) {
   );
 }
 
-function storeInGoal(
+// Move ARTIFACTS a robot was carrying into its HIVE's upward CELL. They stay
+// off the mats, but they now belong to that CELL rather than to the robot.
+function storeInCell(
   world: World,
   side: 'player' | 'bot',
   colors: PieceColor[],
 ) {
+  const up = world.hives[allianceOf(side)].up;
   for (const color of colors) {
     const piece = heldPiece(world, side, color);
-    if (piece) piece.stored = side;
+    if (!piece) continue;
+    piece.stored = side;
+    piece.cell = up;
   }
 }
 
-// A shot that bounces off the rim: the ARTIFACT comes straight back out of
-// the GOAL and rolls onto the mats instead of counting.
+// A shot that bounces off the rim of the upward CELL: the ARTIFACT drops
+// back out of the mouth, a moment after it was fired, and rolls a short way
+// back out toward the robot instead of counting.
 function bounceOut(world: World, side: 'player' | 'bot', color: PieceColor) {
   const piece = heldPiece(world, side, color);
   if (!piece) return;
-  const goal = side === 'player' ? BLUE_GOAL : RED_GOAL;
-  const [shot] = spillPlan(goal, 1);
+  const alliance = allianceOf(side);
+  const up = world.hives[alliance].up;
+  const shot = bouncePlan(cellMouth(alliance, up), up);
   piece.release = {
-    delay: 0,
+    delay: 0.3,
     x: shot.x,
     y: shot.y,
-    // A bounce, not a spill: it drops off the rim and rolls a short way.
-    vx: shot.vx * 0.5,
-    vy: shot.vy * 0.5,
+    vx: shot.vx,
+    vy: shot.vy,
+    drop: BOUNCE_DROP,
   };
 }
 
-// A GOAL tips over: it scores once, then dumps everything it held back onto
-// the field for both robots to chase again. Only what the GOAL holds spills -
-// ARTIFACTS still riding in a robot stay put.
-function tipGoal(world: World, side: 'player' | 'bot') {
-  const goal = side === 'player' ? BLUE_GOAL : RED_GOAL;
-  const spilled = world.pieces.filter((piece) => piece.stored === side);
-  const shots = spillPlan(goal, spilled.length);
+// How long a tipping CELL takes to swing down far enough to start pouring.
+const TIP_SWING = 0.3;
+
+// A HIVE tips over, as in BIOBUZZ: it scores once, and the full CELL swings
+// down and pours everything it held out of its open end, on its own side of
+// the HIVE, for both robots to chase again. The empty CELL at the other end
+// swings up, so the next load goes in from the other side. ARTIFACTS still
+// riding in a robot stay put.
+function tipHive(world: World, side: 'player' | 'bot') {
+  const alliance = allianceOf(side);
+  const hive = world.hives[alliance];
+  const end = hive.up;
+  const spilled = world.pieces.filter(
+    (piece) => piece.stored === side && piece.cell === end && !piece.release,
+  );
+  const shots = spillPlan(spillMouth(alliance, end), end, spilled.length);
   spilled.forEach((piece, index) => {
-    // ARTIFACTS leave the GOAL one at a time, in a shuffled order and at
-    // uneven intervals, each from the point on the rim facing where it is
-    // headed, and roll out on the gentle spill curve until they settle.
+    // They fall out one at a time, in a shuffled order and at uneven
+    // intervals, and roll out on the gentle spill curve until they settle.
+    // Until then they ride the CELL down.
     const { x, y, vx, vy, delay } = shots[index];
-    piece.stored = undefined;
-    piece.release = { delay, x, y, vx, vy };
+    piece.release = {
+      delay: TIP_SWING + delay,
+      x,
+      y,
+      vx,
+      vy,
+      drop: SPILL_DROP,
+    };
   });
-  emitBurst(world, goal.x, goal.y, '#ffd166', `+${TIP_POINTS}`);
-  if (side === 'player') {
-    world.playerScore += TIP_POINTS;
-    world.playerGoal = 0;
-    world.tips += 1;
-  } else {
-    world.botScore += TIP_POINTS;
-    world.botGoal = 0;
-  }
+  hive.up = end > 0 ? -1 : 1;
+  hive.load = 0;
+  hive.tips += 1;
+  const mouth = cellMouth(alliance, end);
+  emitBurst(world, mouth.x, mouth.y, '#ffd166', `+${TIP_POINTS}`);
+  if (side === 'player') world.playerScore += TIP_POINTS;
+  else world.botScore += TIP_POINTS;
 }
 
-// A robot parked beside a GOAL sits right where its ARTIFACTS come out.
+// A robot waiting under a pouring CELL sits right where its ARTIFACTS land.
 // Without a moment's grace it would swallow one the instant it appeared, which
 // looks like a ball bouncing out and vanishing.
 const SPILL_GRACE = 0.7;
@@ -352,7 +410,7 @@ function pickable(piece: Piece) {
   return piece.active && !(piece.grace && piece.grace > 0);
 }
 
-// Let queued ARTIFACTS out of a tipped GOAL as their turn comes round.
+// Let queued ARTIFACTS out of a tipped CELL as their turn comes round.
 function releaseSpills(world: World, dt: number) {
   for (const piece of world.pieces) {
     if (piece.grace) piece.grace = Math.max(0, piece.grace - dt);
@@ -369,9 +427,12 @@ function releaseSpills(world: World, dt: number) {
     piece.active = true;
     piece.spill = true;
     piece.grace = SPILL_GRACE;
+    piece.air = fallTime(release.drop);
+    piece.drop = release.drop;
     piece.collector = undefined;
+    piece.stored = undefined;
+    piece.cell = undefined;
     piece.release = undefined;
-    emitBurst(world, piece.x, piece.y, ink(piece.color, piece.alliance));
   }
 }
 
@@ -410,7 +471,8 @@ export function GameArena({
     prompt: 'Drive to an ARTIFACT',
     botIntent: 'Scanning the field',
     finalSeconds: false,
-    goalLoad: 0,
+    goalLoad: CELL_PRELOAD * NECTAR_TIP_VALUE,
+    cellUp: HIVE_START_UP,
   });
 
   useEffect(() => {
@@ -434,7 +496,7 @@ export function GameArena({
     grab: collectGrab,
   } = collectProfile(selected.collect);
   const playerStrafe = strafeFactor(selected.drive);
-  // How close the robot has to get to load the GOAL: what the lift reaches,
+  // How close the robot has to get to load a CELL: what the lift reaches,
   // plus whatever the scoring tool can throw.
   const scoreRadius = scoreReach(selected.reach);
   // How the scoring tool loads: its reload, batch size and miss chance.
@@ -588,8 +650,13 @@ export function GameArena({
       resolveObstacle(world.player);
 
       const action = keys.has(' ') || keys.has('space') || touch.action;
-      const nearGoal =
-        distance(world.player, BLUE_GOAL) <= scoreRadius + alignTolerance;
+      const blueHive = world.hives.blue;
+      const nearGoal = inLoadingRange(
+        world.player,
+        'blue',
+        blueHive.up,
+        scoreRadius + alignTolerance,
+      );
       // Only ARTIFACTS this collector will touch, nearest first.
       const inReach = world.pieces
         .filter(
@@ -610,25 +677,26 @@ export function GameArena({
                 ? world.player.carried.splice(0)
                 : [world.player.carried.shift()!];
             const made: PieceColor[] = [];
+            const mouth = cellMouth('blue', blueHive.up);
             loaded.forEach((color, index) => {
               if (Math.random() < scoreMiss) {
                 bounceOut(world, 'player', color);
-                emitBurst(world, BLUE_GOAL.x, BLUE_GOAL.y, '#f6d68d', 'MISS');
+                emitBurst(world, mouth.x, mouth.y, '#f6d68d', 'MISS');
                 return;
               }
               made.push(color);
               world.scored += 1;
-              world.playerGoal += tipValue(color);
+              blueHive.load += tipValue(color);
               emitBurst(
                 world,
-                BLUE_GOAL.x + 30,
-                BLUE_GOAL.y + index * 22,
+                mouth.x + 30,
+                mouth.y + index * 22,
                 ink(color, 'blue'),
-                `${world.playerGoal}/${tipAt}`,
+                `${blueHive.load}/${tipAt}`,
               );
             });
-            storeInGoal(world, 'player', made);
-            if (goalTips(world.playerGoal)) tipGoal(world, 'player');
+            storeInCell(world, 'player', made);
+            if (goalTips(blueHive.load)) tipHive(world, 'player');
             world.player.cooldown = scoreCycle;
           }
         } else if (inReach.length > 0) {
@@ -661,6 +729,7 @@ export function GameArena({
         }
       }
       const bot = world.bot;
+      const redHive = world.hives.red;
       world.botThink -= dt;
       const botCapacity = difficulty === 'rookie' ? 2 : 3;
       if (world.botThink <= 0) {
@@ -672,14 +741,15 @@ export function GameArena({
           world.botIntent = 'Returning to BASE';
         } else if (
           usedSpace(bot.carried, 'bot') >= botCapacity ||
-          (world.botIntent === 'Heading to the GOAL' &&
+          (world.botIntent.startsWith('Heading to') &&
             bot.carried.length > 0) ||
           !world.pieces.some(
             (piece) => pickable(piece) && mayCollect(piece, 'red'),
           )
         ) {
-          world.botTarget = RED_GOAL;
-          world.botIntent = 'Heading to the GOAL';
+          // Round to whichever side of the HIVE its upward CELL faces.
+          world.botTarget = loadingSpot('red', redHive.up);
+          world.botIntent = `Heading to the ${cellSide(redHive.up)} CELL`;
         } else {
           const targetPiece = world.pieces
             .filter((piece) => pickable(piece) && mayCollect(piece, 'red'))
@@ -725,19 +795,23 @@ export function GameArena({
       resolveObstacle(bot);
 
       if (bot.cooldown <= 0) {
-        if (distance(bot, RED_GOAL) < 95 && bot.carried.length > 0) {
+        if (
+          inLoadingRange(bot, 'red', redHive.up, 95) &&
+          bot.carried.length > 0
+        ) {
           const color = bot.carried.shift()!;
-          world.botGoal += tipValue(color);
+          redHive.load += tipValue(color);
           bot.cooldown = difficulty === 'rookie' ? 0.72 : 0.45;
+          const mouth = cellMouth('red', redHive.up);
           emitBurst(
             world,
-            RED_GOAL.x - 30,
-            RED_GOAL.y,
+            mouth.x - 30,
+            mouth.y,
             ink(color, 'red'),
-            `${world.botGoal}/${tipAt}`,
+            `${redHive.load}/${tipAt}`,
           );
-          storeInGoal(world, 'bot', [color]);
-          if (goalTips(world.botGoal)) tipGoal(world, 'bot');
+          storeInCell(world, 'bot', [color]);
+          if (goalTips(redHive.load)) tipHive(world, 'bot');
         } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
             .filter((item) => pickable(item) && mayCollect(item, 'red'))
@@ -803,7 +877,7 @@ export function GameArena({
           botScore: world.botScore,
           collected: world.collected,
           scored: world.scored,
-          tips: world.tips,
+          tips: world.hives.blue.tips,
           baseBonus,
         });
       }
@@ -837,11 +911,12 @@ export function GameArena({
           .sort(
             (a, b) => distance(world.player, a) - distance(world.player, b),
           )[0];
-        const nearGoal = distance(world.player, BLUE_GOAL) <= scoreRadius;
+        const up = world.hives.blue.up;
+        const nearGoal = inLoadingRange(world.player, 'blue', up, scoreRadius);
         const target = playerTarget(world, selected);
         let prompt =
           target?.kind === 'goal'
-            ? 'Drive to the blue GOAL'
+            ? `Load the ${cellSide(up)} CELL of the blue HIVE`
             : target
               ? 'Drive to an ARTIFACT'
               : 'No ARTIFACTS left on the field';
@@ -868,7 +943,8 @@ export function GameArena({
           prompt,
           botIntent: world.botIntent,
           finalSeconds: world.time <= 10,
-          goalLoad: world.playerGoal,
+          goalLoad: world.hives.blue.load,
+          cellUp: up,
         });
         hudClock = 0;
       }
@@ -929,7 +1005,7 @@ export function GameArena({
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {hud.prompt}. You have {hud.playerScore} points. Scout-7 has{' '}
         {hud.botScore}. Using {hud.carried} of {hud.capacity} storage slots.
-        {` Goal holds ${hud.goalLoad} of ${tipAt}; it tips at ${tipAt} for ${TIP_POINTS} points.`}
+        {` Your HIVE's ${cellSide(hud.cellUp)} CELL is up and holds ${hud.goalLoad} of ${tipAt}; it tips at ${tipAt} for ${TIP_POINTS} points.`}
       </output>
       <header className="match-header">
         <Button variant="ghost" className="match-back" onClick={onWorkshop}>
@@ -954,13 +1030,16 @@ export function GameArena({
           </div>
           <div
             className={`goal-meter ${hud.goalLoad >= tipAt - 1 ? 'is-close' : ''}`}
-            title={`The GOAL tips at ${tipAt} of loaded value for ${TIP_POINTS} points`}
+            title={`The HIVE tips at ${tipAt} of loaded value for ${TIP_POINTS} points, then its other CELL swings up`}
           >
-            <span>GOAL</span>
+            <span>HIVE</span>
             <strong>
               {hud.goalLoad}
               <small>/{tipAt}</small>
             </strong>
+            <em className={hud.cellUp > 0 ? 'is-near' : 'is-far'}>
+              {hud.cellUp > 0 ? '▼ Near' : '▲ Far'} CELL up
+            </em>
             <i>
               <b style={{ width: `${(hud.goalLoad / tipAt) * 100}%` }} />
             </i>
@@ -1188,8 +1267,10 @@ export function GameArena({
           <div className="match-tip">
             <strong>PIT TIP</strong>
             <p>
-              ARTIFACTS score nothing alone. Fill the GOAL to {tipAt} and it
-              tips for {TIP_POINTS}, spilling them back onto the mats.
+              ARTIFACTS score nothing alone. Load the HIVE&apos;s upward CELL to{' '}
+              {tipAt} and it tips for {TIP_POINTS}, pouring them out on that
+              side. Then its other CELL is up - go round and load it from the
+              other side.
             </p>
           </div>
         </aside>

@@ -684,6 +684,17 @@
   color: #7e97a8;
   font-size: 9px;
 }
+/* Which CELL is facing up: the side of the HIVE to load from. */
+.immersive-match .goal-meter em {
+  grid-column: 1 / -1;
+  color: #f6d68c;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 .immersive-match .goal-meter i {
   grid-column: 1 / -1;
   height: 4px;
@@ -1475,26 +1486,27 @@
   }
 }
 
-/* The GOAL meter sits under the scoreboard, so on a phone the pattern chips and
+/* The HIVE meter sits under the scoreboard, so on a phone the pattern chips and
    the camera switch move clear of it. Appended last so these win the cascade. */
 @media (max-width: 600px) {
   .immersive-match .goal-meter {
     width: 108px;
     padding: 4px 8px 6px;
   }
-  .immersive-match .goal-meter span {
+  .immersive-match .goal-meter span,
+  .immersive-match .goal-meter em {
     font-size: 9px;
   }
   .immersive-match .arena-camera-switch {
-    top: 128px;
+    top: 144px;
   }
 }
 
-/* Between phone and desktop the centered GOAL meter reaches across the camera
+/* Between phone and desktop the centered HIVE meter reaches across the camera
    switch, so the switch drops below it until the header is wide enough. */
 @media (min-width: 601px) and (max-width: 820px) {
   .immersive-match .arena-camera-switch {
-    top: 136px;
+    top: 152px;
   }
 }
 

@@ -6,26 +6,40 @@ import { mergeStaticMeshes } from './merge-static';
 import { createRenderPipeline } from './render-pipeline';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { label, place, ring, setupScene, solid } from './scene-kit';
-import {
-  blockWall,
-  concreteFloor,
-  eventCarpet,
-  ribbedPlank,
-  treadPlate,
-} from './textures';
+import { blockWall, concreteFloor, eventCarpet, ribbedPlank } from './textures';
 import {
   BLUE_BASE_ZONE,
-  BLUE_GOAL,
+  CELL_MOUTH,
+  cellMouth,
   FIELD_CENTER,
   FIELD_SIZE,
+  FRAME_HALF_WIDTH,
+  HIVE_X,
+  LOAD_FRONT,
   RED_BASE_ZONE,
-  RED_GOAL,
   TILE,
   TILES,
   zoneCenter,
+  type Alliance,
+  type CellEnd,
 } from './field';
 import type { World } from './game-arena';
-import { assistGuides, playerTarget, scoreReach } from './match-guidance';
+import {
+  CELL_BALL_SCALE,
+  cellSlot,
+  createHive,
+  HIVE_TILT,
+  hiveFrame,
+  IN,
+  PIVOT_HEIGHT,
+} from './hive-model';
+import {
+  assistGuides,
+  inLoadingRange,
+  playerTarget,
+  scoreReach,
+} from './match-guidance';
+import { fallTime } from './robot-physics';
 
 export type CameraMode = 'arena' | 'follow';
 const SCALE = 0.02;
@@ -44,9 +58,11 @@ const toScene = (target: THREE.Vector3, x: number, z: number, y = 0.08) =>
   target.set((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
 // Where the follow camera sits relative to the robot, and where it looks.
+// It looks well ahead of the robot, so that from in front of the HIVE the
+// upward CELL is still in view below the scoreboard.
 const FOLLOW_HEIGHT = 7.4;
 const FOLLOW_BACK = 9.6;
-const FOLLOW_AHEAD = 2.4;
+const FOLLOW_AHEAD = 5;
 
 // Clear polycarbonate perimeter panels: close to invisible head-on, but they
 // pick up the hall's light strips as sharp reflections, the way real field
@@ -233,65 +249,6 @@ function artifact(look: BallLook, base = ARTIFACT_RADIUS) {
   group.add(new THREE.Mesh(parts.seam, parts.seamColor[key]));
   group.scale.setScalar(radius);
   return group;
-}
-
-function goal(
-  scene: THREE.Object3D,
-  x: number,
-  z: number,
-  color: number,
-  title: string,
-) {
-  const root = new THREE.Group();
-  root.position.set(x, 0, z);
-  scene.add(root);
-  // Diamond tread-plate base.
-  const tread = treadPlate(3);
-  const plate = new THREE.Mesh(
-    new RoundedBoxGeometry(2.1, 0.2, 1.9, 1, 0.04),
-    new THREE.MeshStandardMaterial({
-      color: 0x55616a,
-      metalness: 0.85,
-      roughness: 0.42,
-      bumpMap: tread.bumpMap,
-      bumpScale: 1.5,
-    }),
-  );
-  plate.castShadow = true;
-  plate.receiveShadow = true;
-  place(root, plate, 0, MAT_TOP + 0.1, 0);
-  for (const a of [-0.74, 0.74]) {
-    place(root, solid(0.1, 1.65, 0.1, 0xa4b5bf, 0.8), a, 0.94, -0.45);
-    const brace = solid(0.09, 1.8, 0.09, 0x566c79, 0.7);
-    brace.rotation.z = a < 0 ? -0.35 : 0.35;
-    place(root, brace, a, 0.9, 0.3);
-  }
-  const funnel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.88, 0.44, 0.67, 32, 1, true),
-    new THREE.MeshPhysicalMaterial({
-      color,
-      metalness: 0,
-      roughness: 0.32,
-      clearcoat: 0.8,
-      clearcoatRoughness: 0.18,
-      side: THREE.DoubleSide,
-    }),
-  );
-  funnel.castShadow = true;
-  place(root, funnel, 0, 1.45, 0);
-  const lip = ring(0.88, color, 0.075);
-  place(root, lip, 0, 1.8, 0);
-  const inside = solid(0.75, 0.08, 0.75, 0x101c26);
-  place(root, inside, 0, 1.07, 0);
-  place(
-    root,
-    label(title, 1.5, 0.35, '#15232e', color === blue ? '#6ec7ff' : '#ff9290'),
-    0,
-    0.9,
-    0.57,
-  );
-  place(root, label('SCORE HERE', 1.2, 0.22, '#15232e'), 0, 0.58, 0.57);
-  return root;
 }
 
 // Seeded so every load of the field looks the same.
@@ -540,30 +497,12 @@ function arenaRoom(scene: THREE.Object3D) {
     marker.rotation.x = -Math.PI / 2;
     place(scene, marker, spot.x, MAT_TOP + 0.02, spot.z + 0.26);
   }
-  const center = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.36, 1.45, 0.65, 6),
-    new THREE.MeshStandardMaterial({
-      color: 0x586f7c,
-      metalness: 0.65,
-      roughness: 0.4,
-    }),
-  );
-  center.castShadow = true;
-  place(scene, center, 0, 0.35, 0.02);
-  const obelisk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.52, 0.88, 1.5, 3),
-    new THREE.MeshStandardMaterial({
-      color: 0xd7c79c,
-      metalness: 0.4,
-      roughness: 0.45,
-    }),
-  );
-  obelisk.castShadow = true;
-  place(scene, obelisk, 0, 1.38, 0.02);
-  const blueSpot = position(BLUE_GOAL.x, BLUE_GOAL.y);
-  const redSpot = position(RED_GOAL.x, RED_GOAL.y);
-  goal(scene, blueSpot.x, blueSpot.z, blue, 'BLUE GOAL');
-  goal(scene, redSpot.x, redSpot.z, red, 'RED GOAL');
+  // The HIVE frame in the middle of the field; the HIVES that tip on it are
+  // added separately, since they move.
+  hiveFrame(scene, MAT_TOP, {
+    blue: (HIVE_X.blue - FIELD_CENTER) * SCALE,
+    red: (HIVE_X.red - FIELD_CENTER) * SCALE,
+  });
   const midline = Math.floor(half * 0.62);
   for (let z = -midline; z <= midline; z += 1)
     place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, MAT_TOP, z);
@@ -791,6 +730,10 @@ type Flight = {
   duration: number;
   scored: boolean;
   collector?: number;
+  // A shot into a CELL follows the CELL's mouth, in case it is moving, and
+  // hands the ARTIFACT over to the CELL when it lands.
+  cell?: THREE.Object3D;
+  pieceId?: number;
 };
 
 export function createArenaScene(
@@ -799,7 +742,7 @@ export function createArenaScene(
   world: World,
 ) {
   const { scene, renderer, environment } = setupScene(canvas, 0x182936);
-  // Everything that never moves - field, goals, hall, stands - is built into
+  // Everything that never moves - field, HIVE frame, hall, stands - is built into
   // one group and fused into a handful of meshes.
   const venue = new THREE.Group();
   arenaRoom(venue);
@@ -864,21 +807,99 @@ export function createArenaScene(
   scene.add(playerRing);
   const botRing = ring(0.78, red, 0.025);
   scene.add(botRing);
-  // Gold for ARTIFACTS and the GOAL; alliance blue when it points at the BASE.
+  // Gold for ARTIFACTS and the HIVE; alliance blue when it points at the BASE.
   const aimGold = 0xf0c35b;
   const aimRing = ring(0.42, aimGold, 0.027);
   scene.add(aimRing);
-  // Range Finder's ring: the loading range round the GOAL, dim until the robot
-  // is inside it, then bright.
+  // Range Finder's mark: where the robot can load the upward CELL from - the
+  // part of its reach round the mouth that is out in front of the HIVE. Dim
+  // until the robot is inside it, then bright; it moves when the HIVE tips.
   const loadRange = scoreReach(selected.reach);
-  const rangeRing = ring(loadRange * SCALE, blue, 0.018);
-  rangeRing.position.copy(position(BLUE_GOAL.x, BLUE_GOAL.y, MAT_TOP + 0.01));
+  const rangeRing = new THREE.Group();
+  const rangeMaterial = new THREE.MeshBasicMaterial({
+    color: blue,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  {
+    // Built for the near CELL; the far one is the same turned round.
+    const front = (LOAD_FRONT - CELL_MOUTH) / loadRange;
+    const start = Math.asin(Math.min(1, front));
+    const arc = new THREE.Mesh(
+      new THREE.RingGeometry(
+        loadRange * SCALE - 0.03,
+        loadRange * SCALE + 0.03,
+        48,
+        1,
+        start,
+        Math.PI - start * 2,
+      ),
+      rangeMaterial,
+    );
+    arc.rotation.x = Math.PI / 2;
+    rangeRing.add(arc);
+    const chord = Math.cos(start) * loadRange * SCALE * 2;
+    const edge = new THREE.Mesh(
+      new THREE.PlaneGeometry(chord, 0.05),
+      rangeMaterial,
+    );
+    edge.rotation.x = -Math.PI / 2;
+    edge.position.z = (LOAD_FRONT - CELL_MOUTH) * SCALE;
+    rangeRing.add(edge);
+  }
   rangeRing.visible = selected.assist === 'range';
   scene.add(rangeRing);
   const rangeColor = new THREE.Color(blue);
+  const placeRange = (end: CellEnd) => {
+    const mouth = cellMouth('blue', end);
+    toScene(rangeRing.position, mouth.x, mouth.y, MAT_TOP + 0.012);
+    rangeRing.rotation.y = end > 0 ? 0 : Math.PI;
+  };
+  placeRange(world.hives.blue.up);
+
+  // The two HIVES, tipping on the frame. Each one swings to its new rest on a
+  // stiff spring and stops hard against its dampers, with a little bounce.
+  const hives = { blue: createHive('blue'), red: createHive('red') };
+  const swing = {} as Record<Alliance, { angle: number; speed: number }>;
+  for (const alliance of ['blue', 'red'] as const) {
+    const hive = hives[alliance];
+    const angle = -world.hives[alliance].up * HIVE_TILT;
+    hive.root.position.set(
+      (HIVE_X[alliance] - FIELD_CENTER) * SCALE,
+      MAT_TOP + PIVOT_HEIGHT,
+      0,
+    );
+    hive.root.rotation.x = angle;
+    swing[alliance] = { angle, speed: 0 };
+    scene.add(hive.root);
+  }
+  // The follow camera always looks up the field, so loading the far CELL - or
+  // driving under the HIVES - puts the HIVES between it and the robot. They
+  // fade to see-through then. Their materials are left transparent all the
+  // time, so fading never makes the graphics chip rebuild a shader mid-match.
+  const hiveLooks: { material: THREE.Material; opacity: number }[] = [];
+  for (const hive of Object.values(hives))
+    hive.root.traverse((object) => {
+      const material = (object as THREE.Mesh).material;
+      if (!material || Array.isArray(material)) return;
+      if (hiveLooks.some((look) => look.material === material)) return;
+      material.transparent = true;
+      hiveLooks.push({ material, opacity: material.opacity });
+    });
+  let hiveFade = 1;
+  // Which slot in its CELL each stored ARTIFACT has, kept until it leaves so
+  // the rest do not shuffle round as the CELL pours.
+  const slots = new Map<number, number>();
+  const cellOf = (piece: World['pieces'][number]) =>
+    hives[piece.stored === 'bot' ? 'red' : 'blue'].cells[piece.cell ?? 1];
+  // ARTIFACTS on their way into a CELL, drawn by their flight until it lands.
+  const landing = new Set<number>();
+  const storedSeen = new Set(
+    world.pieces.filter((piece) => piece.stored).map((piece) => piece.id),
+  );
   // The ARTIFACTS on the mats are drawn as instances: one body and one set
   // of seams per colour, however many balls are out. Only a ball in flight
-  // (into a robot or a GOAL) gets a mesh of its own.
+  // (into a robot or a CELL) gets a mesh of its own.
   const parts = getBallParts();
   const makeField = (look: BallLook) => {
     const capacity = Math.max(
@@ -930,7 +951,6 @@ export function createArenaScene(
     World['particles'][number],
     ReturnType<typeof label>
   >();
-  const previousScores = [world.playerScore, world.botScore];
   const previousCarried = [[] as string[], [] as string[]];
   const previousVelocity = [new THREE.Vector2(), new THREE.Vector2()];
   const targetLine = new THREE.Line(
@@ -1003,6 +1023,38 @@ export function createArenaScene(
       );
       text.quaternion.copy(camera.quaternion);
       text.material.opacity = Math.min(1, particle.life * 3);
+    }
+    // Tip the HIVES toward whichever way they now rest.
+    for (const alliance of ['blue', 'red'] as const) {
+      const s = swing[alliance];
+      const rest = -state.hives[alliance].up * HIVE_TILT;
+      if (!paused) {
+        // Small steps, so a slow frame cannot fling it through a stop.
+        for (let left = Math.min(dt, 0.1); left > 0; left -= 1 / 120) {
+          const step = Math.min(left, 1 / 120);
+          s.speed += ((rest - s.angle) * 60 - s.speed * 7) * step;
+          s.angle += s.speed * step;
+          // The dampers stop it dead at 30 degrees either way.
+          if (Math.abs(s.angle) > HIVE_TILT) {
+            s.angle = Math.sign(s.angle) * HIVE_TILT;
+            s.speed *= -0.25;
+          }
+        }
+      }
+      hives[alliance].root.rotation.x = s.angle;
+      hives[alliance].root.updateMatrixWorld(true);
+    }
+    if (rangeRing.visible) placeRange(state.hives.blue.up);
+    const hidden =
+      mode === 'follow' &&
+      Math.abs(state.player.x - FIELD_CENTER) < FRAME_HALF_WIDTH + 40 &&
+      state.player.y > FIELD_CENTER - 330 &&
+      state.player.y < FIELD_CENTER + 60;
+    const fade = THREE.MathUtils.damp(hiveFade, hidden ? 0.22 : 1, 8, dt);
+    if (Math.abs(fade - hiveFade) > 0.002) {
+      hiveFade = fade;
+      for (const look of hiveLooks)
+        look.material.opacity = look.opacity * hiveFade;
     }
     const actors = [state.player, state.bot];
     const models = [player, bot];
@@ -1092,33 +1144,6 @@ export function createArenaScene(
           );
         ball.visible = ball.userData.arrival <= 0;
       });
-      const score = index === 0 ? state.playerScore : state.botScore;
-      if (score > previousScores[index] && state.time > 0) {
-        const colors = previousCarried[index].slice(
-          0,
-          Math.max(1, previousCarried[index].length - actor.carried.length),
-        );
-        colors.forEach((color, i) => {
-          const mesh = artifact(lookOf(color, index === 0 ? 'blue' : 'red'));
-          scene.add(mesh);
-          flights.push({
-            mesh,
-            from: model.groups.score.localToWorld(
-              new THREE.Vector3(0, 0.3, 0.35),
-            ),
-            // Into the top of the funnel of the GOAL it was loaded into.
-            to: position(
-              index === 0 ? BLUE_GOAL.x : RED_GOAL.x,
-              index === 0 ? BLUE_GOAL.y : RED_GOAL.y,
-              1.8,
-            ),
-            elapsed: -i * 0.09,
-            duration: 0.58,
-            scored: true,
-          });
-        });
-      }
-      previousScores[index] = score;
       previousCarried[index] = [...actor.carried];
       const scoring = flights.some(
         (f) => f.scored && f.from.distanceTo(model.root.position) < 2.8,
@@ -1140,11 +1165,62 @@ export function createArenaScene(
       );
     });
     const drawn = { B: 0, R: 0, G: 0 };
+    // Slots free up as ARTIFACTS leave their CELL.
+    for (const [id] of slots) if (!state.pieces[id]?.stored) slots.delete(id);
     state.pieces.forEach((piece) => {
       const key = lookOf(piece.color, piece.alliance);
       const roll = rolls.get(piece.id)!;
+      const radius =
+        piece.color === 'P' ? ARTIFACT_RADIUS * NECTAR_SCALE : ARTIFACT_RADIUS;
+      if (piece.stored) {
+        const cell = cellOf(piece);
+        // Just loaded: a copy flies from the robot's scorer into the mouth,
+        // and the ARTIFACT appears in the CELL once it lands.
+        if (!storedSeen.has(piece.id)) {
+          storedSeen.add(piece.id);
+          landing.add(piece.id);
+          const shooter = models[piece.stored === 'bot' ? 1 : 0];
+          const mesh = artifact(lookOf(piece.color, piece.alliance));
+          scene.add(mesh);
+          flights.push({
+            mesh,
+            from: shooter.groups.score.localToWorld(
+              new THREE.Vector3(0, 0.3, 0.35),
+            ),
+            to: cell.mouth.getWorldPosition(new THREE.Vector3()),
+            elapsed: -flights.filter((f) => f.cell).length * 0.09,
+            duration: 0.58,
+            scored: true,
+            cell: cell.mouth,
+            pieceId: piece.id,
+          });
+        }
+        if (landing.has(piece.id)) return;
+        // Settled in its CELL, riding along as the HIVE tips.
+        if (!slots.has(piece.id)) {
+          const taken = new Set<number>();
+          for (const [id, slot] of slots)
+            if (cellOf(state.pieces[id]) === cell) taken.add(slot);
+          let free = 0;
+          while (taken.has(free)) free++;
+          slots.set(piece.id, free);
+        }
+        const size = radius * CELL_BALL_SCALE;
+        cellSlot(slots.get(piece.id)!, size, ballSpot);
+        ballPose.compose(
+          ballSpot,
+          ballTurn.setFromEuler(roll),
+          ballSize.setScalar(size),
+        );
+        ballPose.premultiply(cell.inside.matrixWorld);
+        const slot = drawn[key]++;
+        fieldBalls[key].body.setMatrixAt(slot, ballPose);
+        fieldBalls[key].seams.setMatrixAt(slot, ballPose);
+        return;
+      }
+      storedSeen.delete(piece.id);
       if (piece.active) {
-        // A tipped GOAL puts ARTIFACTS back on the mats: they simply join the
+        // A tipped CELL puts ARTIFACTS back on the mats: they simply join the
         // instances again.
         onMats.set(piece.id, true);
         if (!paused) {
@@ -1155,16 +1231,18 @@ export function createArenaScene(
           roll.x += ((piece.vy ?? 0) * spin * SCALE * dt) / 0.28;
           roll.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / 0.28;
         }
+        // Falling out of a CELL: it drops from the mouth, gathering speed.
+        let height = restingHeight(piece.color);
+        if (piece.air && piece.drop) {
+          const fallen = 1 - piece.air / fallTime(piece.drop);
+          height += piece.drop * IN * (1 - fallen * fallen);
+        }
         toScene(
           ballSpot,
           tween(piece.px, piece.x),
           tween(piece.py, piece.y),
-          restingHeight(piece.color),
+          height,
         );
-        const radius =
-          piece.color === 'P'
-            ? ARTIFACT_RADIUS * NECTAR_SCALE
-            : ARTIFACT_RADIUS;
         ballPose.compose(
           ballSpot,
           ballTurn.setFromEuler(roll),
@@ -1210,6 +1288,7 @@ export function createArenaScene(
         if (t < 0.55) f.mesh.position.lerpVectors(f.from, mouth, t / 0.55);
         else f.mesh.position.lerpVectors(mouth, f.to, (t - 0.55) / 0.45);
       } else {
+        if (f.cell) f.cell.getWorldPosition(f.to);
         f.mesh.position.lerpVectors(f.from, f.to, t);
         f.mesh.position.y += 4 * t * (1 - t) * 1.35;
       }
@@ -1218,6 +1297,7 @@ export function createArenaScene(
         scene.remove(f.mesh);
         disposeObject(f.mesh);
         flights.splice(i, 1);
+        if (f.pieceId !== undefined) landing.delete(f.pieceId);
       }
     }
     toScene(
@@ -1228,14 +1308,13 @@ export function createArenaScene(
     );
     toScene(botRing.position, state.bot.x, state.bot.y, MAT_TOP + 0.01);
     if (rangeRing.visible) {
-      const inRange =
-        Math.hypot(
-          state.player.x - BLUE_GOAL.x,
-          state.player.y - BLUE_GOAL.y,
-        ) <= loadRange;
-      (rangeRing.material as THREE.MeshBasicMaterial).color
-        .copy(rangeColor)
-        .multiplyScalar(inRange ? 2.6 : 0.7);
+      const inRange = inLoadingRange(
+        state.player,
+        'blue',
+        state.hives.blue.up,
+        loadRange,
+      );
+      rangeMaterial.color.copy(rangeColor).multiplyScalar(inRange ? 2.6 : 0.7);
     }
     // Guides are the assist parts' job alone; each draws only in its own
     // part of the match (see `assistGuides`).

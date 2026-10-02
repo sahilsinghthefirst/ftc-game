@@ -23,7 +23,15 @@ npx tsc --noEmit
 npm run build
 ```
 
-Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too. ARTIFACTS score nothing on their own: big NECTAR counts 1.5 toward the GOAL and small yellow POLLEN 1, so the GOAL tips at 10 for 20 points and rolls those ARTIFACTS back onto the mats, where they must be visible again. NECTAR fills two storage slots in every module except the Low Rider Hopper. As in BIOBUZZ, NECTAR comes in red and blue and each robot may only pick up its own alliance's; POLLEN is anyone's.
+Manual smoke test: assemble a robot, start a match, drive with WASD or arrows, hold Space to collect and score, pause/resume, and finish a match. Check touch controls on a narrow viewport too.
+
+The match follows BIOBUZZ (FTC 2026-27, competition manual sections 9 and 10) without the FLOWERS yet:
+
+- Every ball starts in a row against the perimeter wall, staged as BIOBUZZ stages them: eight POLLEN in each alliance's LOADING ZONE, its five NECTAR at the middle of its wall, four POLLEN in each GARDEN corner, and four at each future FLOWER spot. The blue side is laid out like BIOBUZZ's left-hand alliance and red mirrors it, so the match stays fair for the player and the bot.
+- In the middle stands the HIVE structure: two A-frames and a crossbar with the BIOBUZZ banner, carrying a blue HIVE and a red HIVE. Each HIVE is a seesaw with a five-sided CELL at either end, and one CELL always faces up. Both start with the near CELL up, holding three of their alliance's NECTAR.
+- ARTIFACTS score nothing on their own. A robot loads its HIVE's upward CELL from in front of its open end (`inLoadingRange`); big NECTAR counts 1.5 and small yellow POLLEN 1. At 10 the HIVE tips for 20 points: the full CELL swings down and pours everything out on its own side of the field, where it must be visible again, and the empty CELL at the other end swings up - so the next load goes in from the other side.
+- Robots and ARTIFACTS can pass under the HIVES between the A-frames; only the A-frames' base bars are solid. In follow view, the HIVES fade see-through while they stand between the camera and the robot.
+- NECTAR fills two storage slots in every module except the Low Rider Hopper. As in BIOBUZZ, NECTAR comes in red and blue and each robot may only pick up its own alliance's; POLLEN is anyone's.
 
 ### Graphics quality and performance
 
@@ -45,15 +53,16 @@ Keep the draw-call count low when adding scenery - it is what limits integrated 
 - `app/assembly-bay.tsx`, `app/robot-3d.tsx`: interactive assembly and workshop view.
 - `app/robot-model.ts`: shared procedural robot geometry and moving parts.
 - `app/game-arena.tsx`: match loop, controls, bot, scoring, and HUD.
-- `app/field.ts`: field geometry - a 6 x 6 square of foam mats, with the goals, bases, and ARTIFACT positions every other module reads from.
-- `app/robot-physics.ts`: driving, braking, and rolling-ball interactions.
-- `app/match-guidance.ts`: collection guidance, per-part gameplay tables, and the GOAL tipping rule.
-- `app/bot-driver.ts`: the opposing bot's steering, obstacle avoidance, and stuck recovery.
+- `app/field.ts`: field geometry - a 6 x 6 square of foam mats, the HIVE structure and its CELLS, bases, and the starting rows of ARTIFACTS every other module reads from.
+- `app/robot-physics.ts`: driving, braking, rolling-ball interactions, and how a tipped CELL pours out.
+- `app/match-guidance.ts`: collection guidance, per-part gameplay tables, the loading range, and the HIVE tipping rule.
+- `app/bot-driver.ts`: the opposing bot's steering round the HIVE frame, and stuck recovery.
 - `app/arena-scene.ts`, `app/scene-kit.ts`: Three.js field, cameras, materials, lighting, and animations.
+- `app/hive-model.ts`: the 3D HIVE structure from the BIOBUZZ manual's drawings - A-frames, the BIOBUZZ banner, CELLS with their rims, polycarbonate and AprilTag stickers.
 - `app/render-pipeline.ts`, `app/quality.ts`, `app/graphics-setting.ts`, `app/graphics-picker.tsx`: post-processing, quality tiers, the specs check, and the graphics setting and its menu control.
 - `app/merge-static.ts`: fuses static meshes to cut draw calls.
 - `app/field-tiles.ts`: outlines of the interlocking field tiles, with an even seam between neighbours.
-- `app/textures.ts`: procedural surface textures for the hall and workshop (concrete, carpet, block wall, tread plate, pegboard, work mat).
+- `app/textures.ts`: procedural surface textures for the hall and workshop (concrete, carpet, block wall, bleacher planks, pegboard, work mat).
 - `tests/`: focused gameplay regression tests.
 
 Stack: React, TypeScript, Vinext/Vite, Three.js, and Tailwind CSS.

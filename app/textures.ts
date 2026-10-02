@@ -158,27 +158,6 @@ export function blockWall(repeatX: number, repeatY: number) {
   };
 }
 
-// Raised diamond tread plate, as a bump map over brushed metal.
-export function treadPlate(repeat: number) {
-  const size = 128;
-  const bump = canvas(size);
-  bump.ctx.fillStyle = '#707070';
-  bump.ctx.fillRect(0, 0, size, size);
-  bump.ctx.fillStyle = '#d8d8d8';
-  const step = size / 4;
-  for (let row = 0; row < 8; row++)
-    for (let col = 0; col < 5; col++) {
-      const x = col * step + (row % 2 ? step / 2 : 0);
-      const y = row * (step / 2);
-      bump.ctx.save();
-      bump.ctx.translate(x, y);
-      bump.ctx.rotate(row % 2 ? Math.PI / 4 : -Math.PI / 4);
-      bump.ctx.fillRect(-step * 0.32, -2.5, step * 0.64, 5);
-      bump.ctx.restore();
-    }
-  return { bumpMap: toTexture(bump.element, [repeat, repeat], false) };
-}
-
 // Ribbed aluminum bleacher plank: fine ridges running along its length.
 export function ribbedPlank(repeat: number) {
   const size = 128;

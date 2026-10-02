@@ -2,57 +2,87 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOT_OBSTACLES, botHeading, createBotMind } from '../app/bot-driver.ts';
 import { moveBody, resolveObstacle } from '../app/robot-physics.ts';
-import { FIELD_SIZE, RED_GOAL, ROBOT_MARGIN } from '../app/field.ts';
+import { inLoadingRange } from '../app/match-guidance.ts';
+import {
+  barContact,
+  FIELD_CENTER,
+  FIELD_SIZE,
+  FRAME_HALF_DEPTH,
+  FRAME_HALF_WIDTH,
+  loadingSpot,
+  ROBOT_MARGIN,
+} from '../app/field.ts';
 
 const STEP = 1 / 60;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
-// Drive Scout-7 at a target exactly the way the match loop does, and report
-// whether it ever arrives.
+// One step of Scout-7 exactly the way the match loop drives it.
+function stepToward(bot, target, mind) {
+  const heading = botHeading(bot, target, mind, STEP);
+  if (heading.x === 0 && heading.y === 0) {
+    // Arrived: coast.
+    bot.vx *= 0.7;
+    bot.vy *= 0.7;
+  } else {
+    const angle = Math.atan2(heading.y, heading.x);
+    bot.vx += clamp(Math.cos(angle) * 205 - bot.vx, -660 * STEP, 660 * STEP);
+    bot.vy += clamp(Math.sin(angle) * 205 - bot.vy, -660 * STEP, 660 * STEP);
+  }
+  moveBody(bot, STEP);
+  resolveObstacle(bot);
+  return heading;
+}
+
+// Drive Scout-7 at a target and report how long it took to arrive, if it did.
 function driveTo(start, target, limit = 12) {
   const bot = { x: start.x, y: start.y, vx: 0, vy: 0, angle: 0 };
   const mind = createBotMind();
   for (let t = 0; t < limit; t += STEP) {
-    const heading = botHeading(bot, target, mind, STEP);
+    const heading = stepToward(bot, target, mind);
     if (heading.x === 0 && heading.y === 0) return t;
-    const angle = Math.atan2(heading.y, heading.x);
-    bot.vx += clamp(Math.cos(angle) * 205 - bot.vx, -660 * STEP, 660 * STEP);
-    bot.vy += clamp(Math.sin(angle) * 205 - bot.vy, -660 * STEP, 660 * STEP);
-    moveBody(bot, STEP);
-    resolveObstacle(bot);
     if (Math.hypot(target.x - bot.x, target.y - bot.y) <= 7) return t;
   }
   return null;
 }
 
 const clearOfObstacles = (point) =>
-  BOT_OBSTACLES.every(
-    (o) => Math.hypot(point.x - o.x, point.y - o.y) > o.r + 10,
-  );
+  BOT_OBSTACLES.every((bar) => barContact(bar, point.x, point.y).gap > 10);
 
-test('Scout-7 drives around every obstacle instead of grinding on it', () => {
-  for (const obstacle of BOT_OBSTACLES) {
-    for (let i = 0; i < 12; i++) {
-      const angle = (i / 12) * Math.PI * 2;
-      const reach = obstacle.r + 120;
-      const edge = ROBOT_MARGIN + 6;
-      const far = FIELD_SIZE - edge;
-      const start = {
-        x: clamp(obstacle.x + Math.cos(angle) * reach, edge, far),
-        y: clamp(obstacle.y + Math.sin(angle) * reach, edge, far),
-      };
-      const target = {
-        x: clamp(obstacle.x - Math.cos(angle) * reach, edge, far),
-        y: clamp(obstacle.y - Math.sin(angle) * reach, edge, far),
-      };
-      // Skip geometry no robot could reach: inside a solid object.
-      if (!clearOfObstacles(start) || !clearOfObstacles(target)) continue;
-      assert.ok(
-        driveTo(start, target) !== null,
-        `stuck going (${start.x.toFixed(0)},${start.y.toFixed(0)}) -> (${target.x.toFixed(0)},${target.y.toFixed(0)})`,
-      );
+test('the only obstacles are the two A-frame base bars', () => {
+  assert.equal(BOT_OBSTACLES.length, 2);
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  for (const bar of BOT_OBSTACLES) {
+    assert.ok(near(Math.abs(bar.ax - FIELD_CENTER), FRAME_HALF_WIDTH));
+    assert.equal(bar.ax, bar.bx);
+    assert.ok(near(bar.by - bar.ay, FRAME_HALF_DEPTH * 2));
+  }
+});
+
+test('Scout-7 drives round the A-frames instead of grinding on them', () => {
+  for (const bar of BOT_OBSTACLES) {
+    // Straight across each bar, at heights all along it, both ways.
+    for (const along of [-1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2]) {
+      const y = FIELD_CENTER + along * FRAME_HALF_DEPTH;
+      for (const side of [-1, 1]) {
+        const start = { x: bar.ax + side * 160, y };
+        const target = { x: bar.ax - side * 160, y };
+        if (!clearOfObstacles(start) || !clearOfObstacles(target)) continue;
+        assert.ok(
+          driveTo(start, target) !== null,
+          `stuck going (${start.x.toFixed(0)},${start.y.toFixed(0)}) -> (${target.x.toFixed(0)},${target.y.toFixed(0)})`,
+        );
+      }
     }
   }
+});
+
+test('Scout-7 can drive straight under the HIVES, between the A-frames', () => {
+  const start = { x: FIELD_CENTER, y: FIELD_CENTER + 300 };
+  const target = { x: FIELD_CENTER, y: FIELD_CENTER - 300 };
+  const time = driveTo(start, target);
+  assert.ok(time !== null, 'it never got through');
+  // 600 units at 205 a second: no detour round the frame.
+  assert.ok(time < 3.6, `took ${time.toFixed(1)}s, so it went round`);
 });
 
 test('Scout-7 gets out of the corners and along the walls', () => {
@@ -73,87 +103,36 @@ test('Scout-7 gets out of the corners and along the walls', () => {
   }
 });
 
-test('Scout-7 still drives straight into its own GOAL to score', () => {
-  // The GOALS are obstacles, so the bot must not treat the one it is aiming
-  // for as something to steer around. Start clear of the center structure.
-  const start = { x: RED_GOAL.x - 250, y: RED_GOAL.y + 120 };
-  assert.ok(clearOfObstacles(start), 'test start must be on open mats');
-  // It cannot reach the GOAL's center - the structure stops it - but it has to
-  // close to within scoring range of 95.
-  const bot = { x: start.x, y: start.y, vx: 0, vy: 0, angle: 0 };
-  const mind = createBotMind();
-  for (let t = 0; t < 6; t += STEP) {
-    const heading = botHeading(bot, RED_GOAL, mind, STEP);
-    // Arrived: coast, the way the match loop does.
-    if (heading.x === 0 && heading.y === 0) {
-      bot.vx *= 0.7;
-      bot.vy *= 0.7;
-      moveBody(bot, STEP);
-      resolveObstacle(bot);
-      continue;
-    }
-    const angle = Math.atan2(heading.y, heading.x);
-    bot.vx += clamp(Math.cos(angle) * 205 - bot.vx, -660 * STEP, 660 * STEP);
-    bot.vy += clamp(Math.sin(angle) * 205 - bot.vy, -660 * STEP, 660 * STEP);
-    moveBody(bot, STEP);
-    resolveObstacle(bot);
-  }
-  const gap = Math.hypot(RED_GOAL.x - bot.x, RED_GOAL.y - bot.y);
-  assert.ok(
-    gap < 95,
-    `ended ${gap.toFixed(0)} from the GOAL, too far to score`,
-  );
-});
-
-test('Scout-7 docks at its GOAL from anywhere on the mats and stays there', () => {
-  // With the GOAL beside the center structure it can be approached from every
-  // side, and reaching it must not read as being stuck and back the bot off.
-  const far = FIELD_SIZE - 50;
+test('Scout-7 reaches either CELL of its HIVE from anywhere and can load it', () => {
+  const far = FIELD_SIZE - 60;
   const mid = FIELD_SIZE / 2;
   const starts = [
     { x: mid, y: far },
-    { x: mid, y: 100 },
+    { x: mid, y: 80 },
     { x: 150, y: 150 },
     { x: far, y: far },
     { x: far, y: mid },
+    { x: 80, y: mid },
   ];
-  for (const start of starts) {
-    const bot = { x: start.x, y: start.y, vx: 0, vy: 0, angle: 0 };
-    const mind = createBotMind();
-    let docked = 0;
-    for (let t = 0; t < 10; t += STEP) {
-      const heading = botHeading(bot, RED_GOAL, mind, STEP);
-      if (heading.x === 0 && heading.y === 0) {
-        bot.vx *= 0.7;
-        bot.vy *= 0.7;
-      } else {
-        const angle = Math.atan2(heading.y, heading.x);
-        bot.vx += clamp(
-          Math.cos(angle) * 205 - bot.vx,
-          -660 * STEP,
-          660 * STEP,
-        );
-        bot.vy += clamp(
-          Math.sin(angle) * 205 - bot.vy,
-          -660 * STEP,
-          660 * STEP,
-        );
+  for (const end of [1, -1]) {
+    const target = loadingSpot('red', end);
+    for (const start of starts) {
+      const bot = { x: start.x, y: start.y, vx: 0, vy: 0, angle: 0 };
+      const mind = createBotMind();
+      let loading = 0;
+      for (let t = 0; t < 10; t += STEP) {
+        stepToward(bot, target, mind);
+        if (inLoadingRange(bot, 'red', end, 95)) loading += STEP;
       }
-      moveBody(bot, STEP);
-      resolveObstacle(bot);
-      if (Math.hypot(RED_GOAL.x - bot.x, RED_GOAL.y - bot.y) < 95)
-        docked += STEP;
+      // Into loading range within a few seconds, and still there at the end.
+      assert.ok(
+        inLoadingRange(bot, 'red', end, 95),
+        `from ${start.x},${start.y} to the ${end > 0 ? 'near' : 'far'} CELL it ended at ${bot.x.toFixed(0)},${bot.y.toFixed(0)}`,
+      );
+      assert.ok(
+        loading > 4,
+        `from ${start.x},${start.y} it was in range for ${loading.toFixed(1)}s`,
+      );
     }
-    // Across the field and into scoring range within a few seconds, and still
-    // there at the end.
-    const gap = Math.hypot(RED_GOAL.x - bot.x, RED_GOAL.y - bot.y);
-    assert.ok(
-      gap < 95,
-      `from ${start.x},${start.y} ended ${gap.toFixed(0)} out`,
-    );
-    assert.ok(
-      docked > 4,
-      `from ${start.x},${start.y} docked for ${docked.toFixed(1)}s`,
-    );
   }
 });
