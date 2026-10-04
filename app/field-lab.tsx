@@ -9,24 +9,18 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  ArrowLeft,
   BatteryCharging,
   Bot,
   Box,
   CheckCircle2,
-  ChevronRight,
-  Crosshair,
   Flag,
   Gauge,
   Grip,
   Lightbulb,
   MoveUp,
   PackageOpen,
-  Play,
-  RotateCcw,
   Scale,
   ScanLine,
-  ShieldCheck,
   Target,
   Trophy,
   Wrench,
@@ -502,43 +496,43 @@ function HowItWorks() {
         render={<Button variant="outline" className="header-button" />}
         aria-label="How FieldLab works"
       >
-        <Wrench aria-hidden="true" /> <span>How it works</span>
+        <Wrench aria-hidden="true" /> <span>Help</span>
       </DialogTrigger>
       <DialogContent className="how-dialog" showCloseButton>
         <DialogHeader>
-          <p className="eyebrow">YOUR FIRST GARAGE CUP</p>
-          <DialogTitle>Pick it up. Bolt it on. Test it.</DialogTitle>
+          <DialogTitle>How to play</DialogTitle>
           <DialogDescription>
-            FieldLab turns the build-and-test loop used by FIRST Tech Challenge
-            teams into a short, hands-on game.
+            Build a robot, then drive it against Scout-7.
           </DialogDescription>
         </DialogHeader>
         <div className="how-steps">
           <div>
             <span>01</span>
             <div>
-              <strong>Pick up a real-looking subsystem</strong>
+              <strong>Build</strong>
               <p>
-                Drag it from the parts tray to the pulsing mount on the robot.
+                Choose a category and drag a part onto the robot. You can also
+                focus a part and press Enter to install it.
               </p>
             </div>
           </div>
           <div>
             <span>02</span>
             <div>
-              <strong>Weigh up the trade-offs</strong>
+              <strong>Compare</strong>
               <p>
-                Every part has a strength and a cost. Watch the trait bars
-                change as you swap one in.
+                Read each part's strengths and tradeoffs. Open Robot details to
+                see your build's ratings.
               </p>
             </div>
           </div>
           <div>
             <span>03</span>
             <div>
-              <strong>Drive, learn, and rebuild</strong>
+              <strong>Play</strong>
               <p>
-                Race Scout-7, read the pit notes, then make one smart change.
+                Select Play, choose a difficulty, and start the match. Use WASD
+                or arrows to drive and hold Space to collect or load balls.
               </p>
             </div>
           </div>
@@ -601,59 +595,56 @@ function Briefing({
             <p className="brand-kicker">ARTIFACT RUSH</p>
           </div>
         </div>
-        <div className="header-status">
-          <span className="status-dot" />
-          <span>GARAGE CUP</span>
-          <strong>QUALIFIER</strong>
-        </div>
         <Button variant="ghost" className="header-button" onClick={onBack}>
-          <ArrowLeft /> Workshop
+          Workshop
         </Button>
       </header>
       <div className="briefing-wrap">
+        <div className="briefing-title">
+          <h1>Play a match</h1>
+          <p>60 seconds · You vs. Scout-7</p>
+        </div>
         <section className="briefing-main">
-          <p className="eyebrow">MATCH 01 / DRIVER BRIEFING</p>
-          <h1>Collect. Match. Get home.</h1>
+          <h2>How to score</h2>
           <p className="briefing-lead">
-            Your robot is ready. ARTIFACTS score nothing on their own - load the
-            upward CELL of the blue HIVE until it tips for {tipPoints} points.
-            It pours out on that side, and the other CELL swings up, so go round
-            and load it next. Reach BASE before the horn.
+            Fill the raised cell of the blue HIVE to tip it for {tipPoints}{' '}
+            points. When it tips, load the other side. Return to the blue base
+            in the final 10 seconds.
           </p>
           <div className="mission-strip">
             <div>
               <span>1</span>
-              <strong>COLLECT</strong>
-              <p>Hold action near a piece</p>
+              <strong>Collect</strong>
+              <p>Hold Space near a ball</p>
             </div>
-            <ChevronRight />
             <div>
               <span>2</span>
-              <strong>TIP</strong>
-              <p>Load {tipAt} into the up CELL</p>
+              <strong>Load</strong>
+              <p>Hold Space at the raised cell</p>
             </div>
-            <ChevronRight />
             <div>
               <span>3</span>
-              <strong>RETURN</strong>
-              <p>Get to BASE in the final 10</p>
+              <strong>Return</strong>
+              <p>Park at your base before time runs out</p>
             </div>
           </div>
           <div className="tip-brief">
             <div>
-              <p className="eyebrow">TIPPING THE HIVE</p>
-              <strong>NECTAR {nectarValue} · POLLEN 1</strong>
+              <strong>Blue nectar: {nectarValue} · Yellow pollen: 1</strong>
             </div>
             <p>
               <b>{tipPoints}</b> points at {tipAt}
               <br />
-              <span>only blue NECTAR is yours · it fills two slots</span>
+              <span>
+                Collect blue nectar and yellow pollen. Nectar uses two slots,
+                except in the Low Rider Hopper.
+              </span>
             </p>
           </div>
         </section>
         <aside className="briefing-side">
           <div>
-            <p className="eyebrow">CHOOSE YOUR RIVAL</p>
+            <h2 className="setup-heading">Difficulty</h2>
             <div className="difficulty-list">
               {difficulties.map((item) => (
                 <button
@@ -674,20 +665,24 @@ function Briefing({
               ))}
             </div>
           </div>
-          <GraphicsPicker />
-          <div className="briefing-loadout">
-            <p className="eyebrow">ATLAS LOADOUT</p>
-            <div>
-              {selectedModules.map((module) => (
-                <span key={module.id}>{module.code}</span>
-              ))}
+          <details className="setup-details">
+            <summary>Robot & graphics settings</summary>
+            <GraphicsPicker />
+            <div className="briefing-loadout">
+              <p className="eyebrow">Your robot</p>
+              <div>
+                {selectedModules.map((module) => (
+                  <span key={module.id}>{module.name}</span>
+                ))}
+              </div>
+              <p className="briefing-handling">
+                <strong>Handling {handling}/12</strong> ·{' '}
+                {handlingNote(handling)}
+              </p>
             </div>
-            <p className="briefing-handling">
-              <strong>Handling {handling}/12</strong> · {handlingNote(handling)}
-            </p>
-          </div>
+          </details>
           <Button className="start-match-button" onClick={onStart}>
-            START MATCH <Play />
+            Start match
           </Button>
           <p className="start-note">
             60 seconds · Pause anytime · WASD or arrows
@@ -713,11 +708,7 @@ function Results({
   const tied = result.playerScore === result.botScore;
   const collector = modules.find((module) => module.id === selected.collect)!;
   const carrier = modules.find((module) => module.id === selected.carry)!;
-  const verdict = tied
-    ? 'Photo finish.'
-    : won
-      ? 'That build works.'
-      : 'Good data. Back to the pit.';
+  const verdict = tied ? 'Draw' : won ? 'You won!' : 'Scout-7 won';
   return (
     <main className="results-screen">
       <header className="workshop-header">
@@ -730,11 +721,6 @@ function Results({
             <p className="brand-kicker">AN FTC TEAM OUTREACH PROJECT</p>
           </div>
         </div>
-        <div className="header-status">
-          <span className="status-dot" />
-          <span>GARAGE CUP</span>
-          <strong>RESULTS</strong>
-        </div>
         <HowItWorks />
       </header>
       <div className="results-wrap">
@@ -742,7 +728,7 @@ function Results({
           <div className={`result-emblem ${won ? 'won' : ''}`}>
             {won ? <Trophy /> : <Flag />}
           </div>
-          <p className="eyebrow">QUALIFIER COMPLETE</p>
+          <p className="eyebrow">Match results</p>
           <h1>{verdict}</h1>
           <div className="final-score">
             <div>
@@ -755,18 +741,11 @@ function Results({
               <strong>{result.botScore}</strong>
             </div>
           </div>
-          <p className="result-sub">
-            {won
-              ? 'Your choices turned into a winning strategy.'
-              : 'FTC teams rarely get the perfect robot on the first try. The next change is the interesting part.'}
-          </p>
           <div className="result-actions">
             <Button variant="outline" onClick={onRematch}>
-              <RotateCcw /> Rematch
+              Play again
             </Button>
-            <Button onClick={onWorkshop}>
-              Make changes <Wrench />
-            </Button>
+            <Button onClick={onWorkshop}>Workshop</Button>
           </div>
         </section>
         <section className="result-data">
@@ -792,39 +771,26 @@ function Results({
             <div className="analysis-heading">
               <Lightbulb />
               <div>
-                <p className="eyebrow">PIT ANALYSIS</p>
-                <h2>Your robot left clues.</h2>
+                <h2>Build feedback</h2>
               </div>
             </div>
             <div className="analysis-notes">
               <div>
-                <span>WORKED</span>
+                <span>Collector</span>
                 <p>
-                  <strong>{collector.name}</strong> gave you{' '}
-                  {collector.strength.toLowerCase()}.
+                  <strong>{collector.name}</strong>
+                  <br />
+                  {collector.strength}
                 </p>
               </div>
               <div>
-                <span>TRY NEXT</span>
+                <span>Carry</span>
                 <p>
-                  Your <strong>{carrier.name}</strong>{' '}
-                  {carrier.tradeoff.toLowerCase()}. Test another Carry module
-                  and compare.
+                  <strong>{carrier.name}</strong>
+                  <br />
+                  {carrier.tradeoff}. Try a different Carry part to compare.
                 </p>
               </div>
-            </div>
-          </div>
-          <div className="first-connection">
-            <span className="first-loop">
-              BUILD <i>→</i> TEST <i>→</i> IMPROVE
-            </span>
-            <div>
-              <p className="eyebrow">THIS IS THE FTC LOOP</p>
-              <h2>Real teams learn the same way.</h2>
-              <p>
-                Every match gives engineers evidence. They bring it back to the
-                pit, change the robot, and try again—together.
-              </p>
             </div>
           </div>
         </section>
@@ -836,9 +802,7 @@ function Results({
 export function FieldLab() {
   const [category, setCategory] = useState<Category>('drive');
   const [selected, setSelected] = useState<Record<Category, string>>(starter);
-  const [snapNote, setSnapNote] = useState(
-    'Balanced Rookie is on the bench. Pick up any part to start.',
-  );
+  const [snapNote, setSnapNote] = useState('');
   const [blueprint, setBlueprint] = useState('balanced');
   const [dragging, setDragging] = useState<Module | null>(null);
   // Where the dragged part first appears. After that the ghost is moved
@@ -882,6 +846,15 @@ export function FieldLab() {
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
+    if (phase === 'match') return;
+    const frame = requestAnimationFrame(() => {
+      const heading = document.querySelector<HTMLElement>('main h1');
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [phase]);
 
   useEffect(
@@ -988,11 +961,7 @@ export function FieldLab() {
     setBlueprint('custom');
     setCategory(module.category);
     setSnappingCategory(module.category);
-    setSnapNote(
-      mode === 'drag'
-        ? `${module.name} seated on the ${buildInfo[module.category].mount.toLowerCase()}. Brackets and bolts added.`
-        : `${module.name} installed. Try dragging the next part onto its mount.`,
-    );
+    setSnapNote(`${module.name} installed.`);
     window.setTimeout(() => setSnappingCategory(null), 620);
   };
 
@@ -1095,7 +1064,7 @@ export function FieldLab() {
     if (!next) return;
     setSelected(next.loadout);
     setBlueprint(id);
-    setSnapNote(`${next.name} is on the bench. Swap any subsystem you want.`);
+    setSnapNote(`${next.name} loaded.`);
   };
 
   useEffect(() => {
@@ -1277,59 +1246,51 @@ export function FieldLab() {
             <small>FIRST Tech Challenge outreach</small>
           </span>
         </div>
-        <div className="pit-progress" aria-label="Garage Cup progress">
-          <span className="is-current" aria-current="step">
-            <b>1</b> Build
-          </span>
-          <i />
-          <span>
-            <b>2</b> Shakedown
-          </span>
-          <i />
-          <span>
-            <b>3</b> Match
-          </span>
-        </div>
         <HowItWorks />
       </header>
 
       <section className="pit-titlebar">
         <div>
-          <p className="team-label">FTC PIT WORKSHOP · ROBOT 01</p>
-          <h1>Your robot. Your next move.</h1>
-          <p>
-            Explore the robot, swap a mechanism, then put your build to the
-            test.
-          </p>
+          <h1>Workshop</h1>
         </div>
-        <label className="starter-picker">
-          <span>Start from a team blueprint</span>
-          <select
-            value={blueprint}
-            onChange={(event) => loadBlueprint(event.target.value)}
+        <div className="workshop-actions">
+          <label className="starter-picker">
+            <span>Robot preset</span>
+            <select
+              value={blueprint}
+              onChange={(event) => loadBlueprint(event.target.value)}
+            >
+              {blueprint === 'custom' && (
+                <option value="custom">Custom build</option>
+              )}
+              {blueprints.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            className="field-button"
+            size="lg"
+            onClick={() => setPhase('briefing')}
+            disabled={
+              resources.power > 22 ||
+              resources.weight > 22 ||
+              resources.space > 22
+            }
           >
-            {blueprint === 'custom' && (
-              <option value="custom">Custom build</option>
-            )}
-            {blueprints.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} — {item.note}
-              </option>
-            ))}
-          </select>
-        </label>
+            Play
+          </Button>
+        </div>
       </section>
 
       <div className="pit-workspace">
         <section className="assembly-panel" aria-labelledby="assembly-heading">
           <header className="assembly-panel-heading">
             <div>
-              <span className="bench-label">ASSEMBLY BAY A</span>
-              <h2 id="assembly-heading">Atlas · competition robot</h2>
+              <h2 id="assembly-heading">Robot assembly</h2>
             </div>
-            <span className="fit-badge">
-              <ShieldCheck aria-hidden="true" /> Fits FTC-size pattern channel
-            </span>
           </header>
 
           <div
@@ -1374,58 +1335,53 @@ export function FieldLab() {
             </div>
           </div>
 
-          <div className="build-ticket">
-            <div>
-              <Wrench aria-hidden="true" />
-              <span>
-                <b>What connects it</b>
-                {buildInfo[category].hardware}
-              </span>
-            </div>
+          {snapNote && (
             <p
+              className={`assembly-status ${rejected ? 'is-warning' : ''}`}
               aria-live="polite"
-              className={rejected ? 'is-warning' : undefined}
             >
               {snapNote}
             </p>
-          </div>
-
-          <div className="trait-strip" aria-label="Robot performance traits">
-            {traitLabels.map((trait) => (
-              <div key={trait.id} title={`${trait.label}: ${trait.hint}`}>
-                <span>{trait.label}</span>
-                <strong>
-                  {traits[trait.id]}
-                  <small>/12</small>
-                </strong>
-                <i>
-                  <b style={{ width: `${(traits[trait.id] / 12) * 100}%` }} />
-                </i>
+          )}
+          <details className="robot-details">
+            <summary>Robot details</summary>
+            <div className="build-ticket">
+              <div>
+                <Wrench aria-hidden="true" />
+                <span>
+                  <b>What connects it</b>
+                  {buildInfo[category].hardware}
+                </span>
               </div>
-            ))}
-          </div>
+            </div>
+
+            <div className="trait-strip" aria-label="Robot performance traits">
+              {traitLabels.map((trait) => (
+                <div key={trait.id} title={`${trait.label}: ${trait.hint}`}>
+                  <span>{trait.label}</span>
+                  <strong>
+                    {traits[trait.id]}
+                    <small>/12</small>
+                  </strong>
+                  <i>
+                    <b style={{ width: `${(traits[trait.id] / 12) * 100}%` }} />
+                  </i>
+                </div>
+              ))}
+            </div>
+          </details>
         </section>
 
         <aside className="parts-drawer" aria-labelledby="parts-heading">
           <header className="parts-heading">
             <div>
-              <span className="drawer-handle" aria-hidden="true" />
-              <p>Open parts drawer</p>
-              <h2 id="parts-heading">
-                Choose the {buildInfo[category].plainName}
-              </h2>
+              <h2 id="parts-heading">Parts</h2>
             </div>
-            <span className="part-total">
-              <b>24</b> real choices
-            </span>
           </header>
 
           <nav className="subsystem-selector" aria-label="Robot subsystems">
-            {categories.map((item, index) => {
+            {categories.map((item) => {
               const Icon = item.icon;
-              const picked = modules.find(
-                (module) => module.id === selected[item.id],
-              )!;
               return (
                 <button
                   key={item.id}
@@ -1433,15 +1389,8 @@ export function FieldLab() {
                   onClick={() => setCategory(item.id)}
                   aria-pressed={category === item.id}
                 >
-                  <span>{index + 1}</span>
                   <Icon aria-hidden="true" />
                   <strong>{item.label}</strong>
-                  <small>
-                    {picked.name.replace(
-                      /(Comet|Trailblazer|Orbit|Anchor|WideWave|TwinFlex|DualJaw|NectarSort|Low Rider|StackPack|Pocket|Cascade|Arc|Compact|TrueGate|Burst|TipTray|Vector|Range|Auto|Pathfinder)\s?/i,
-                      '',
-                    )}
-                  </small>
                 </button>
               );
             })}
@@ -1449,15 +1398,12 @@ export function FieldLab() {
 
           <div className="parts-tray-heading">
             <div>
-              <strong>Pick up a part</strong>
+              <strong>{buildInfo[category].plainName}</strong>
               <span>
-                Drag it onto the highlighted{' '}
-                {buildInfo[category].mount.toLowerCase()}
+                Drag a part onto the robot. Press Enter to install with the
+                keyboard.
               </span>
             </div>
-            <span className="fit-key">
-              <i /> Fits this robot
-            </span>
           </div>
 
           <div className="parts-tray">
@@ -1492,7 +1438,7 @@ export function FieldLab() {
                     </span>
                     {isSelected && (
                       <span className="installed-sticker">
-                        <CheckCircle2 /> On Atlas
+                        <CheckCircle2 /> Installed
                       </span>
                     )}
                     {isRejected && (
@@ -1502,7 +1448,6 @@ export function FieldLab() {
                     )}
                   </div>
                   <div className="part-tile-copy">
-                    <span className="part-code">{module.code}</span>
                     <strong>{module.name}</strong>
                     <p>{module.blurb}</p>
                     <div>
@@ -1517,7 +1462,7 @@ export function FieldLab() {
 
           <details className="pit-lesson">
             <summary>
-              <Lightbulb aria-hidden="true" /> Why teams build it this way
+              <Lightbulb aria-hidden="true" /> About this part
             </summary>
             <p>{buildInfo[category].lesson}</p>
           </details>
@@ -1546,22 +1491,14 @@ export function FieldLab() {
             </div>
           </div>
 
-          <Button
-            className="field-button"
-            size="lg"
-            onClick={() => setPhase('briefing')}
-            disabled={
-              resources.power > 22 ||
-              resources.weight > 22 ||
-              resources.space > 22
-            }
-          >
-            <span>
-              <strong>Take Atlas to the field</strong>
-              <small>60 seconds · versus Scout-7</small>
-            </span>
-            <Crosshair aria-hidden="true" />
-          </Button>
+          {(resources.power > 22 ||
+            resources.weight > 22 ||
+            resources.space > 22) && (
+            <p className="build-limit-note" role="status">
+              Your build is over a limit. Choose lighter, smaller, or
+              lower-power parts to play.
+            </p>
+          )}
         </aside>
       </div>
 
@@ -1585,20 +1522,7 @@ export function FieldLab() {
       )}
 
       <footer className="first-workshop-band">
-        <div>
-          <strong>THIS IS THE FTC ENGINEERING LOOP</strong>
-          <span>Build</span>
-          <i />
-          <span>Test</span>
-          <i />
-          <span>Learn</span>
-          <i />
-          <span>Improve</span>
-        </div>
-        <p>
-          Unofficial educational experience made for FIRST Tech Challenge team
-          outreach.
-        </p>
+        <p>FIRST Tech Challenge team outreach · Unofficial game</p>
       </footer>
     </main>
   );

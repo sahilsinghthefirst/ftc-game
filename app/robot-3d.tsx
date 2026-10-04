@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Box, Layers3, RotateCcw, Scan, Camera } from 'lucide-react';
+import { Box, Layers3, RotateCcw, Camera } from 'lucide-react';
 import type { AssemblyCategory } from './assembly-bay';
 import {
   createRobotModel,
@@ -336,10 +336,6 @@ export function Robot3DBay(props: Props) {
           </div>
         )}
       </div>
-      <div className="scene-caption">
-        <span className="live-dot" /> PIT 01 <b>ATLAS</b>
-        <span>Robot workshop</span>
-      </div>
       <div className="scene-toolbar" aria-label="3D workshop controls">
         <button
           onClick={() => {
@@ -365,9 +361,10 @@ export function Robot3DBay(props: Props) {
           aria-pressed={exploded}
         >
           <Layers3 size={17} />
-          {exploded ? 'Assemble' : 'Explode'}
+          {exploded ? 'Assembled view' : 'Separate parts'}
         </button>
         <button
+          aria-label={`Change camera view. Current view: ${view}`}
           onClick={() =>
             setCamera(
               view === 'Perspective'
@@ -379,7 +376,7 @@ export function Robot3DBay(props: Props) {
           }
         >
           <Camera size={17} />
-          {view}
+          {view === 'Perspective' ? 'Angle' : view}
         </button>
         <button
           aria-label="Reset camera"
@@ -387,11 +384,6 @@ export function Robot3DBay(props: Props) {
         >
           <RotateCcw size={17} />
         </button>
-      </div>
-      <div className="scene-selection">
-        <Scan size={16} />
-        <span>{names[props.activeCategory]}</span>
-        <small>{exploded ? 'Exploded assembly' : 'Selected mechanism'}</small>
       </div>
       <div className="scene-instructions">
         <Box size={15} />

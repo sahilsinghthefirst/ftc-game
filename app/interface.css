@@ -1,0 +1,660 @@
+/* Workshop and menus only; field rendering and match controls keep their styles. */
+.pit-app {
+  grid-template-rows: 58px 68px minmax(0, 1fr) 28px;
+  min-height: 760px;
+}
+.pit-header {
+  grid-template-columns: 1fr auto;
+  position: sticky;
+  top: 0;
+}
+.pit-header .header-button span {
+  display: inline;
+}
+.pit-header .header-button {
+  width: auto;
+  padding-inline: 12px;
+}
+.pit-titlebar {
+  padding: 10px 20px;
+  position: sticky;
+  top: 58px;
+  z-index: 25;
+  background: #e8edef;
+}
+.workshop-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.workshop-actions .field-button {
+  width: 112px;
+  min-height: 40px;
+  margin: 0;
+  font-size: 17px;
+}
+.build-limit-note {
+  margin: 0;
+  padding: 10px 14px;
+  color: #9f4426;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.pit-titlebar h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.025em;
+}
+.starter-picker {
+  width: 290px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.starter-picker > span {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.starter-picker select {
+  flex: 1;
+  min-width: 0;
+}
+.pit-workspace {
+  grid-template-columns: minmax(0, 1fr) 400px;
+  padding: 0 16px;
+}
+.assembly-panel {
+  display: flex;
+  flex-direction: column;
+  align-content: stretch;
+}
+.assembly-stage {
+  flex: 1;
+}
+.assembly-console,
+.assembly-status,
+.robot-details {
+  flex-shrink: 0;
+}
+.assembly-console {
+  min-height: 64px;
+  padding: 8px 14px;
+}
+.installed-part {
+  display: flex;
+  gap: 12px;
+}
+.installed-part > svg {
+  width: 50px;
+  height: 42px;
+  flex-shrink: 0;
+}
+.installed-part span {
+  font-size: 14px;
+}
+.installed-part small {
+  display: none;
+}
+.assembly-status {
+  margin: 0;
+  padding: 8px 14px;
+  color: #426555;
+  font-size: 14px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--pit-line);
+}
+.assembly-status.is-warning {
+  color: #9f4426;
+}
+.robot-details {
+  background: #f9fbfc;
+}
+.robot-details > summary,
+.setup-details > summary {
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.robot-details > summary:hover,
+.setup-details > summary:hover {
+  background: #edf2f4;
+}
+.robot-details .build-ticket {
+  padding: 4px 14px 10px;
+  background: transparent;
+  border: 0;
+}
+.robot-details .build-ticket span {
+  font-size: 14px;
+}
+.robot-details .trait-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 8px 14px 16px;
+}
+.robot-details .trait-strip span {
+  font-size: 14px;
+}
+.robot-details .trait-strip > div:last-child {
+  grid-column: auto;
+}
+.parts-heading {
+  padding: 12px 14px;
+}
+.parts-heading h2 {
+  font-size: 18px;
+}
+.subsystem-selector button {
+  min-height: 54px;
+}
+.subsystem-selector button > strong {
+  font-size: 14px;
+}
+.parts-tray-heading {
+  padding: 10px 14px;
+}
+.parts-tray-heading strong {
+  font-size: 16px;
+  text-transform: capitalize;
+}
+.parts-tray-heading > div span {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.part-tile {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+.part-tile-art > svg {
+  width: 80px;
+}
+.part-tile-copy > strong {
+  font-size: 16px;
+}
+.part-tile-copy > p,
+.part-tile-copy b,
+.part-tile-copy i {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.part-tile-copy > p {
+  display: none;
+}
+.part-tile-copy > div {
+  margin-top: 5px;
+  gap: 4px;
+  flex-direction: column;
+}
+.installed-sticker {
+  font-size: 12px;
+  left: 4px;
+  right: 4px;
+}
+.pit-lesson summary {
+  font-size: 14px;
+}
+.inspection-meters span,
+.inspection-meters strong {
+  font-size: 14px;
+}
+.field-button {
+  min-height: 52px;
+  height: auto;
+  text-align: center;
+  justify-content: center;
+}
+.field-button > span {
+  width: 100%;
+  align-items: center;
+}
+.field-button strong {
+  font-size: 17px;
+}
+.field-button small {
+  font-size: 14px;
+}
+.first-workshop-band {
+  align-items: center;
+  justify-content: center;
+  padding: 4px 16px;
+}
+.first-workshop-band p {
+  margin: 0;
+  font-size: 12px;
+}
+.scene-toolbar {
+  top: 12px;
+  left: 12px;
+  right: auto;
+}
+.scene-toolbar button {
+  font-size: 14px;
+}
+.scene-instructions {
+  font-size: 14px;
+}
+
+.briefing-screen .workshop-header,
+.results-screen .workshop-header {
+  justify-content: space-between;
+  grid-template-columns: 1fr auto;
+}
+.briefing-screen,
+.results-screen {
+  background: #e8edef;
+}
+.briefing-main {
+  justify-content: flex-start;
+}
+.briefing-main .tip-brief {
+  background: #f9fbfc;
+  border-color: #c5d0d6;
+  border-left-color: #d99d2d;
+}
+.briefing-main .tip-brief > p {
+  text-align: left;
+}
+.start-match-button,
+.result-actions button:first-child {
+  background: #e5b34a;
+  color: #202e34;
+  border: 0;
+}
+.start-match-button:hover,
+.result-actions button:first-child:hover {
+  background: #f0c66c;
+}
+.result-actions button:last-child {
+  background: transparent;
+}
+.briefing-screen .brand-name,
+.results-screen .brand-name {
+  color: #f8f3e8;
+}
+.briefing-screen .header-button,
+.results-screen .header-button {
+  width: auto;
+  padding-inline: 14px;
+  font-size: 14px;
+  color: #f8f3e8;
+}
+.briefing-screen .header-button:hover,
+.results-screen .header-button:hover {
+  background: #29414c;
+}
+.briefing-wrap {
+  min-height: calc(100dvh - 66px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  max-width: 1120px;
+  margin: 0 auto;
+  grid-template-rows: auto 1fr;
+}
+.briefing-title {
+  grid-column: 1 / -1;
+  padding: 28px 36px 0;
+}
+.briefing-title h1 {
+  font-size: 32px;
+  line-height: 1.2;
+  margin: 0;
+  letter-spacing: -0.025em;
+}
+.briefing-title p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #586970;
+}
+.briefing-main h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.briefing-main {
+  padding: 42px 36px;
+}
+.briefing-main h1 {
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  margin: 0 0 20px;
+}
+.briefing-lead {
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 560px;
+  margin: 16px 0 20px;
+}
+.mission-strip {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 22px;
+  margin-top: 26px;
+  padding: 24px 0;
+}
+.mission-strip > div {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  column-gap: 12px;
+  text-align: left;
+}
+.mission-strip > div > span {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  font-size: 20px;
+}
+.mission-strip strong {
+  font-size: 17px;
+}
+.mission-strip p {
+  grid-column: 2;
+  font-size: 16px;
+  margin-top: 4px;
+}
+.tip-brief {
+  display: block;
+  padding: 16px;
+  margin-top: 20px;
+  border-left-width: 3px;
+}
+.tip-brief strong {
+  font-size: 16px;
+}
+.tip-brief > p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+.tip-brief span {
+  font-size: 14px;
+}
+.briefing-side {
+  padding: 42px 24px;
+  background: transparent;
+  box-shadow: none;
+}
+.setup-heading {
+  font-size: 20px;
+  margin: 0 0 16px;
+}
+.difficulty-list button {
+  min-height: 70px;
+  box-shadow: none;
+}
+.difficulty-list button.is-selected {
+  box-shadow: none;
+}
+.difficulty-list strong {
+  font-size: 17px;
+}
+.difficulty-list small {
+  font-size: 14px;
+}
+.setup-details {
+  margin-top: 22px;
+  border: 1px solid #bbb3a7;
+  border-radius: 4px;
+}
+.setup-details .graphics-picker,
+.setup-details .briefing-loadout {
+  margin: 0;
+  padding: 14px;
+}
+.briefing-loadout > div {
+  gap: 6px;
+}
+.briefing-loadout span {
+  font-size: 14px;
+}
+.briefing-handling {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.start-match-button {
+  margin-top: 24px;
+  height: 52px;
+  font-size: 17px;
+  box-shadow: none;
+}
+.start-note {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.results-wrap {
+  min-height: calc(100dvh - 66px);
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.result-hero,
+.result-data {
+  padding: 40px 30px;
+}
+.result-hero {
+  min-height: 0;
+  justify-content: flex-start;
+}
+.metric-row span,
+.final-score span,
+.analysis-notes span {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.metric-row {
+  border-color: #c5d0d6;
+}
+.result-data .pit-analysis {
+  background: #f9fbfc;
+  border-color: #c5d0d6;
+}
+.result-actions button {
+  min-height: 44px;
+}
+.result-hero h1 {
+  font-size: clamp(30px, 4vw, 44px);
+}
+.result-emblem {
+  width: 60px;
+  height: 60px;
+  margin-bottom: 20px;
+}
+.result-actions {
+  margin-top: 24px;
+}
+.result-actions button {
+  font-size: 16px;
+}
+.result-data {
+  background: transparent;
+  box-shadow: none;
+}
+.pit-analysis {
+  box-shadow: none;
+  margin-top: 24px;
+}
+.analysis-notes p {
+  font-size: 16px;
+}
+.how-dialog [data-slot='dialog-title'] {
+  font-size: 26px;
+}
+.how-steps p {
+  font-size: 16px;
+}
+
+@media (max-width: 960px) {
+  .pit-app {
+    height: auto;
+    display: block;
+    overflow-y: visible;
+    min-height: 100dvh;
+  }
+  .pit-titlebar {
+    display: flex;
+    gap: 16px;
+  }
+  .starter-picker {
+    width: 280px;
+    margin: 0;
+  }
+  .pit-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+  .assembly-panel {
+    display: flex;
+  }
+  .assembly-stage {
+    height: max(300px, 42vh);
+    flex: none;
+    min-height: 0;
+  }
+  .parts-tray {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: visible;
+  }
+  .parts-drawer {
+    overflow: visible;
+  }
+  .first-workshop-band {
+    min-height: 0;
+    padding: 12px;
+    display: flex;
+  }
+  .first-workshop-band p {
+    max-width: none;
+    text-align: center;
+  }
+  .briefing-wrap,
+  .results-wrap {
+    grid-template-columns: 1fr;
+  }
+  .briefing-main {
+    padding: 28px 24px;
+  }
+  .briefing-title {
+    padding: 24px 24px 0;
+    order: -2;
+  }
+  .briefing-side {
+    order: -1;
+  }
+  .briefing-side {
+    padding: 24px;
+    border: 0;
+    border-bottom: 1px solid #bbb3a7;
+  }
+  .mission-strip {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .mission-strip > div {
+    display: block;
+  }
+  .result-hero {
+    border-right: 0;
+    border-bottom: 1px solid #bbb3a7;
+  }
+}
+@media (max-width: 600px) {
+  .pit-titlebar {
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .workshop-actions {
+    width: 100%;
+    gap: 12px;
+  }
+  .pit-titlebar h1 {
+    font-size: 22px;
+  }
+  .starter-picker {
+    width: auto;
+    flex: 1;
+  }
+  .starter-picker select {
+    height: 38px;
+  }
+  .pit-workspace {
+    padding: 0 10px;
+  }
+  .assembly-panel {
+    display: flex;
+  }
+  .assembly-stage {
+    height: 300px;
+  }
+  .assembly-console {
+    grid-template-rows: auto;
+  }
+  .installed-part > svg {
+    display: block;
+  }
+  .robot-details .trait-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .robot-details .trait-strip > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .scene-toolbar {
+    top: 10px;
+    left: 10px;
+    gap: 5px;
+  }
+  .scene-toolbar button {
+    padding: 8px;
+    font-size: 14px;
+  }
+  .scene-instructions {
+    left: 10px;
+    bottom: 10px;
+    padding: 8px;
+  }
+  .subsystem-selector {
+    grid-template-columns: repeat(3, 1fr);
+    padding: 0;
+  }
+  .subsystem-selector button {
+    min-height: 48px;
+    flex-direction: row;
+    gap: 6px;
+  }
+  .parts-tray {
+    grid-template-columns: 1fr;
+  }
+  .parts-heading {
+    display: none;
+  }
+  .part-tile {
+    grid-template-columns: 90px minmax(0, 1fr);
+    min-height: 100px;
+  }
+  .field-button {
+    position: sticky;
+    bottom: 12px;
+    z-index: 8;
+    box-shadow: 0 4px 18px #182b3630;
+  }
+  .briefing-main {
+    padding: 24px 18px;
+  }
+  .briefing-title {
+    padding: 24px 18px 0;
+  }
+  .mission-strip {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .mission-strip > div {
+    display: grid;
+  }
+  .briefing-side {
+    padding: 24px 18px;
+  }
+  .result-hero,
+  .result-data {
+    padding: 28px 18px;
+  }
+}
