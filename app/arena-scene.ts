@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { createRobotModel, disposeObject } from './robot-model';
+import {
+  createRobotModel,
+  disposeObject,
+  animateRobotMechanisms,
+  robotScorerPosition,
+} from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { insetOutline, tileEdges, tileOutline } from './field-tiles';
 import { mergeStaticMeshes } from './merge-static';
@@ -777,15 +782,18 @@ export function createArenaScene(
   // A paused match is a still image: draw it once, then leave the graphics
   // chip alone until something changes.
   let stillFrameDrawn = false;
-  const player = createRobotModel(selected);
-  const bot = createRobotModel({
-    drive: 'trailblazer',
-    collect: 'twinflex',
-    carry: 'lowbin',
-    reach: 'swingarm',
-    score: 'tiptray',
-    assist: 'range',
-  });
+  const player = createRobotModel(selected, 'field');
+  const bot = createRobotModel(
+    {
+      drive: 'trailblazer',
+      collect: 'twinflex',
+      carry: 'lowbin',
+      reach: 'swingarm',
+      score: 'tiptray',
+      assist: 'range',
+    },
+    'field',
+  );
   for (const [model, color, name] of [
     [player, blue, 'ATLAS'],
     [bot, red, 'SCOUT-7'],
@@ -1108,13 +1116,6 @@ export function createArenaScene(
           dt,
         );
         previousVelocity[index].set(actor.vx, actor.vy);
-        const collecting = flights.some(
-          (f) => !f.scored && f.collector === index,
-        );
-        model.moving.intake?.traverse((child) => {
-          if (child.userData.roller)
-            child.rotateY((collecting ? 24 : speed > 10 ? 5 : 0) * dt);
-        });
       }
       const signature = actor.carried.join('');
       if (signature !== cargoSignature[index]) {
@@ -1148,21 +1149,18 @@ export function createArenaScene(
       const scoring = flights.some(
         (f) => f.scored && f.from.distanceTo(model.root.position) < 2.8,
       );
-      const lift = model.moving.lift;
-      if (lift)
-        lift.position.y = THREE.MathUtils.damp(
-          lift.position.y,
-          Number(lift.userData.restY ?? 0) + (scoring ? 0.75 : 0),
-          12,
-          dt,
+      if (!paused) {
+        const collecting = flights.some(
+          (f) => !f.scored && f.collector === index,
         );
-      model.groups.score.position.y = THREE.MathUtils.damp(
-        model.groups.score.position.y,
-        (model.groups.score.userData.home as THREE.Vector3).y +
-          (scoring ? 0.75 : 0),
-        12,
-        dt,
-      );
+        animateRobotMechanisms(
+          model,
+          dt,
+          collecting || scoring ? 1 : speed > 10 ? 0.18 : 0,
+          scoring ? 1 : 0,
+        );
+        robotScorerPosition(model, model.groups.score.position);
+      }
     });
     const drawn = { B: 0, R: 0, G: 0 };
     // Slots free up as ARTIFACTS leave their CELL.

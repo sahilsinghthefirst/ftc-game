@@ -7,6 +7,9 @@ import { Box, Layers3, RotateCcw, Camera } from 'lucide-react';
 import type { AssemblyCategory } from './assembly-bay';
 import {
   createRobotModel,
+  updateRobotModel,
+  animateRobotMechanisms,
+  robotScorerPosition,
   disposeObject,
   type RobotModel,
 } from './robot-model';
@@ -20,14 +23,6 @@ type Props = {
   draggingCategory: AssemblyCategory | null;
   snappingCategory: AssemblyCategory | null;
   onSelectCategory?: (category: AssemblyCategory) => void;
-};
-const names: Record<AssemblyCategory, string> = {
-  drive: 'Drivetrain',
-  collect: 'Intake',
-  carry: 'Storage',
-  reach: 'Lift',
-  score: 'Scoring tool',
-  assist: 'Sensors',
 };
 const offsets: Record<AssemblyCategory, THREE.Vector3> = {
   drive: new THREE.Vector3(0, 0, 0),
@@ -43,6 +38,14 @@ export function Robot3DBay(props: Props) {
   const modelRef = useRef<RobotModel | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const cameraMoveRef = useRef<{
+    start: number;
+    from: THREE.Vector3;
+    to: THREE.Vector3;
+    targetFrom: THREE.Vector3;
+    targetTo: THREE.Vector3;
+  } | null>(null);
+  const reducedMotionRef = useRef(false);
   // Asks the workshop view for a fresh frame (it only draws on change).
   const invalidateRef = useRef<() => void>(() => {});
   const propsRef = useRef(props);
@@ -70,21 +73,30 @@ export function Robot3DBay(props: Props) {
       queueMicrotask(() => setFailed(true));
       return;
     }
-    const { scene, renderer, environment } = kit;
+    const { scene, renderer, environment, key } = kit;
+    // A closer inspection camera and a studio-like key reveal the machined
+    // edges; the arena keeps its existing field lighting.
+    key.shadow.camera.left = -8;
+    key.shadow.camera.right = 8;
+    key.shadow.camera.top = 8;
+    key.shadow.camera.bottom = -8;
+    key.shadow.camera.updateProjectionMatrix();
+    key.intensity = 2.4;
+    renderer.toneMappingExposure = 1.02;
     sceneRef.current = scene;
     // The pit never moves, so its many small parts are fused into a few meshes.
     const room = new THREE.Group();
     workshopRoom(room);
     mergeStaticMeshes(room, []);
     scene.add(room);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
     const pipeline = createRenderPipeline(renderer, scene, camera, () =>
       invalidateRef.current(),
     );
-    camera.position.set(10.5, 7.5, 12.5);
+    camera.position.set(8.3, 6.6, 10);
     cameraRef.current = camera;
     const controls = new OrbitControls(camera, canvas);
-    controls.target.set(0, 1.6, 0);
+    controls.target.set(0, 2, 0.2);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 7;
@@ -108,7 +120,17 @@ export function Robot3DBay(props: Props) {
     };
     invalidateRef.current = invalidate;
     controls.addEventListener('change', invalidate);
+    const cancelCameraMove = () => {
+      cameraMoveRef.current = null;
+    };
+    controls.addEventListener('start', cancelCameraMove);
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const motionChanged = () => {
+      reducedMotionRef.current = motion.matches;
+      invalidate();
+    };
+    motionChanged();
+    motion.addEventListener('change', motionChanged);
     const marker = ring(0.55, 0xf2bc42, 0.04);
     scene.add(marker);
     const raycaster = new THREE.Raycaster();
@@ -155,8 +177,8 @@ export function Robot3DBay(props: Props) {
         return;
       event.preventDefault();
       if (event.key === 'Home') {
-        camera.position.set(10.5, 7.5, 12.5);
-        controls.target.set(0, 1.6, 0);
+        camera.position.set(8.3, 6.6, 10);
+        controls.target.set(0, 2, 0.2);
         controls.update();
         return;
       }
@@ -193,8 +215,6 @@ export function Robot3DBay(props: Props) {
     let frame = 0,
       previous = performance.now(),
       elapsed = 0;
-    let snapCategory: string | null = null,
-      snapTime = 0;
     // What the marker last showed, so a change of selection redraws.
     let shownActive: string | null = null;
     let shownDragging = false;
@@ -212,24 +232,76 @@ export function Robot3DBay(props: Props) {
       elapsed += dt;
       const model = modelRef.current;
       const current = propsRef.current;
+      const cameraMove = cameraMoveRef.current;
+      if (cameraMove) {
+        const t = motion.matches
+          ? 1
+          : Math.min(1, (now - cameraMove.start) / 700);
+        const ease = t * t * (3 - 2 * t);
+        camera.position.lerpVectors(cameraMove.from, cameraMove.to, ease);
+        controls.target.lerpVectors(
+          cameraMove.targetFrom,
+          cameraMove.targetTo,
+          ease,
+        );
+        if (t === 1) cameraMoveRef.current = null;
+        dirty = true;
+      }
       if (model) {
         const explodedNow = modeRef.current;
-        if (current.snappingCategory !== snapCategory) {
-          snapCategory = current.snappingCategory;
-          snapTime = elapsed;
-        }
+        if (motion.matches && (model.activity || model.elevation))
+          animateRobotMechanisms(model, 1, 0, 0);
         let moved = false;
+        let testing = 0,
+          extension = 0;
         for (const [key, group] of Object.entries(model.groups)) {
           const category = key as AssemblyCategory;
           goal.copy(group.userData.home as THREE.Vector3);
+          if (category === 'score') robotScorerPosition(model, goal);
           if (explodedNow) goal.add(offsets[category]);
-          if (snapCategory === key && !explodedNow && !motion.matches)
-            goal.y += Math.max(0, 1 - (elapsed - snapTime) / 0.6) ** 2 * 3;
+          const install = group.userData.installStarted as number | undefined;
+          if (install !== undefined) {
+            const t = motion.matches ? 1 : Math.min(1, (now - install) / 1050);
+            // Approach, align, then gently seat the assembly on its mount.
+            const ease = 1 - (1 - t) ** 3;
+            const origin = group.userData.installOffset as THREE.Vector3;
+            goal.addScaledVector(origin, 1 - ease);
+            group.rotation.z = Math.sin(t * Math.PI) * (1 - t) * 0.13;
+            if (t >= 1) {
+              delete group.userData.installStarted;
+              group.rotation.z = 0;
+            }
+            moved = true;
+          }
+          const test = group.userData.testStarted as number | undefined;
+          if (test !== undefined && !motion.matches && !explodedNow) {
+            const t = (now - test) / 2200;
+            if (t > 1) delete group.userData.testStarted;
+            else if (t > 0) {
+              const pulse = Math.sin(Math.min(1, t) * Math.PI) ** 2;
+              if (category === 'collect' || category === 'score')
+                testing = Math.max(testing, pulse);
+              if (category === 'reach' || category === 'score')
+                extension = Math.max(extension, pulse);
+              if (category === 'drive')
+                model.moving.wheels.forEach((wheel) =>
+                  wheel.rotateX(dt * pulse * 1.6),
+                );
+              moved = true;
+            }
+          }
           if (group.position.distanceToSquared(goal) < 1e-8) continue;
           group.position.lerp(
             goal,
             motion.matches ? 1 : 1 - Math.exp(-12 * dt),
           );
+          moved = true;
+        }
+        if (
+          !motion.matches &&
+          (moved || model.activity > 0.001 || model.elevation > 0.001)
+        ) {
+          animateRobotMechanisms(model, dt, testing, extension);
           moved = true;
         }
         const dragging = Boolean(current.draggingCategory);
@@ -267,6 +339,8 @@ export function Robot3DBay(props: Props) {
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.removeEventListener('change', invalidate);
+      controls.removeEventListener('start', cancelCameraMove);
+      motion.removeEventListener('change', motionChanged);
       controls.dispose();
       invalidateRef.current = () => {};
       canvas.removeEventListener('pointerdown', down);
@@ -286,13 +360,28 @@ export function Robot3DBay(props: Props) {
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    if (modelRef.current) {
-      scene.remove(modelRef.current.root);
-      disposeObject(modelRef.current.root);
+    let model = modelRef.current;
+    let changed: AssemblyCategory[];
+    if (model) changed = updateRobotModel(model, props.selected);
+    else {
+      model = createRobotModel(props.selected);
+      scene.add(model.root);
+      modelRef.current = model;
+      changed = ['drive', 'collect', 'reach'];
     }
-    const model = createRobotModel(props.selected);
-    scene.add(model.root);
-    modelRef.current = model;
+    if (changed.includes('reach') && !changed.includes('score'))
+      changed.push('score');
+    if (!reducedMotionRef.current)
+      for (const category of changed) {
+        const group = model.groups[category];
+        const now = performance.now();
+        const offset = offsets[category].clone().multiplyScalar(0.6);
+        offset.y = category === 'drive' ? 0.48 : Math.max(0.55, offset.y);
+        group.userData.installStarted = now;
+        group.userData.installOffset = offset;
+        group.userData.testStarted = now + 1050;
+        group.position.copy(group.userData.home).add(offset);
+      }
     invalidateRef.current();
   }, [props.selected]);
 
@@ -304,14 +393,30 @@ export function Robot3DBay(props: Props) {
       mode === 'Top'
         ? new THREE.Vector3(0, exploded ? 24 : 17, 0.2)
         : mode === 'Front'
-          ? new THREE.Vector3(0, exploded ? 5.2 : 4, exploded ? 23 : 15)
+          ? new THREE.Vector3(0, exploded ? 5.2 : 3.8, exploded ? 23 : 13)
           : exploded
             ? new THREE.Vector3(13, 11, 16)
-            : new THREE.Vector3(10.5, 7.5, 12.5);
-    camera.position.copy(position);
-    controls.target.set(0, exploded ? 3.4 : 1.6, 0);
-    controls.update();
+            : new THREE.Vector3(8.3, 6.6, 10);
+    moveCamera(position, new THREE.Vector3(0, exploded ? 3.4 : 2, 0.2));
     setView(mode);
+  };
+  const moveCamera = (position: THREE.Vector3, target: THREE.Vector3) => {
+    const camera = cameraRef.current,
+      controls = controlsRef.current;
+    if (!camera || !controls) return;
+    if (reducedMotionRef.current) {
+      camera.position.copy(position);
+      controls.target.copy(target);
+      controls.update();
+    } else
+      cameraMoveRef.current = {
+        start: performance.now(),
+        from: camera.position.clone(),
+        to: position,
+        targetFrom: controls.target.clone(),
+        targetTo: target,
+      };
+    invalidateRef.current();
   };
   return (
     <div
@@ -340,18 +445,13 @@ export function Robot3DBay(props: Props) {
         <button
           onClick={() => {
             setExploded((v) => !v);
-            const controls = controlsRef.current,
-              camera = cameraRef.current;
-            if (controls && camera) {
-              controls.target.set(0, exploded ? 1.6 : 3.4, 0);
-              camera.position.set(
-                exploded ? 10.5 : 13,
-                exploded ? 7.5 : 11,
-                exploded ? 12.5 : 16,
-              );
-              controls.update();
-              setView('Perspective');
-            }
+            moveCamera(
+              exploded
+                ? new THREE.Vector3(8.3, 6.6, 10)
+                : new THREE.Vector3(13, 11, 16),
+              new THREE.Vector3(0, exploded ? 2 : 3.4, 0.2),
+            );
+            setView('Perspective');
             setHint(
               exploded
                 ? 'Click a mechanism to inspect it'
