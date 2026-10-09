@@ -15,9 +15,20 @@ export const TILE = 202.5;
 export const FIELD_SIZE = TILES * TILE;
 export const FIELD_CENTER = FIELD_SIZE / 2;
 
+// A robot's body, as a circle round its center: what ARTIFACTS and the other
+// robot bump into. The 3D model is drawn to match (ROBOT_MODEL_SCALE in the
+// arena scene), so resizing a robot means changing both together.
+export const ROBOT_RADIUS = 32;
+// The balls, as radii. NECTAR is 1.28 times POLLEN across, as the real
+// 3.6 in. NECTAR is to the 2.8 in. POLLEN. Physics, staging and the 3D balls
+// all read these, so resizing a ball is one change here.
+export const POLLEN_RADIUS = 10.5;
+export const NECTAR_SCALE = 1.28;
+export const NECTAR_RADIUS = POLLEN_RADIUS * NECTAR_SCALE;
+
 // How close a robot's center or a loose ARTIFACT can get to the perimeter wall.
-export const ROBOT_MARGIN = 43;
-export const BALL_MARGIN = 16;
+export const ROBOT_MARGIN = ROBOT_RADIUS + 15;
+export const BALL_MARGIN = POLLEN_RADIUS + 2;
 
 export type Alliance = 'blue' | 'red';
 
@@ -140,8 +151,6 @@ export const RED_BASE = zoneCenter(RED_BASE_ZONE);
 // the HIVES (see CELL_PRELOAD).
 type Spot = [number, number, 'P' | 'G', Alliance?];
 
-const POLLEN_RADIUS = 14;
-const NECTAR_RADIUS = 18;
 // Centers just off the wall, and a hair apart so the rows sit still.
 const POLLEN_WALL = BALL_MARGIN + 1;
 const NECTAR_WALL = BALL_MARGIN + NECTAR_RADIUS - POLLEN_RADIUS + 1;

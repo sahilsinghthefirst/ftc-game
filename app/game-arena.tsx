@@ -23,8 +23,10 @@ import {
   HIVE_START_UP,
   RED_BASE,
   RED_BASE_ZONE,
+  ROBOT_RADIUS,
   inZone,
   loadingSpot,
+  NECTAR_RADIUS,
   spillMouth,
   type Alliance,
   type CellEnd,
@@ -187,7 +189,6 @@ type Hud = {
 const MATCH_TIME = 60;
 // NECTAR counts 1.5 toward a tip and POLLEN 1, up to this bar.
 const tipAt = GOAL_TIP_AT;
-export const NECTAR_BALL_RADIUS = 18;
 
 // Burst colour for an ARTIFACT: its alliance colour for NECTAR, yellow for
 // POLLEN.
@@ -231,7 +232,7 @@ function createWorld(): World {
     color,
     alliance,
     active: true,
-    radius: color === 'P' ? NECTAR_BALL_RADIUS : BALL_RADIUS,
+    radius: color === 'P' ? NECTAR_RADIUS : BALL_RADIUS,
   }));
   // Each HIVE's upward CELL starts holding three of its alliance's NECTAR.
   const preloads = (['blue', 'red'] as const).flatMap((alliance) =>
@@ -248,7 +249,7 @@ function createWorld(): World {
         active: false,
         stored: alliance === 'blue' ? 'player' : 'bot',
         cell: HIVE_START_UP,
-        radius: NECTAR_BALL_RADIUS,
+        radius: NECTAR_RADIUS,
       };
     }),
   );
@@ -816,7 +817,8 @@ export function GameArena({
           const piece = world.pieces
             .filter((item) => pickable(item) && mayCollect(item, 'red'))
             .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
-          if (piece && distance(bot, piece) < 43) {
+          // Close enough to touch it, whichever size of ball it is.
+          if (piece && distance(bot, piece) < ROBOT_RADIUS + piece.radius + 1) {
             piece.active = false;
             piece.collector = 'bot';
             bot.carried.push(piece.color);
@@ -832,12 +834,14 @@ export function GameArena({
       }
 
       const between = distance(world.player, world.bot);
-      if (between < 62) {
+      // Bodies touching, with a little give.
+      const touching = ROBOT_RADIUS * 2 + 6;
+      if (between < touching) {
         const nx = (world.player.x - world.bot.x) / Math.max(between, 1);
         const ny = (world.player.y - world.bot.y) / Math.max(between, 1);
         // Whoever grips harder gives up less ground. Scout-7 has no drivetrain
         // of its own, so it pushes like a middling one.
-        const push = (62 - between) * 0.5;
+        const push = (touching - between) * 0.5;
         const resist = shoveResist(selected.drive);
         const playerShare = (2 * push) / (resist + 1);
         const botShare = 2 * push - playerShare;

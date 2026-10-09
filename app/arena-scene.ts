@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createRobotModel, disposeObject } from './robot-model';
+import { createRobotModel, disposeObject, STORAGE_INSIDE } from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { insetOutline, tileEdges, tileOutline } from './field-tiles';
 import { mergeStaticMeshes } from './merge-static';
@@ -16,7 +16,10 @@ import {
   FRAME_HALF_WIDTH,
   HIVE_X,
   LOAD_FRONT,
+  NECTAR_SCALE,
+  POLLEN_RADIUS,
   RED_BASE_ZONE,
+  ROBOT_RADIUS,
   TILE,
   TILES,
   zoneCenter,
@@ -57,6 +60,11 @@ const position = (x: number, z: number, y = 0.08) =>
 const toScene = (target: THREE.Vector3, x: number, z: number, y = 0.08) =>
   target.set((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
+// How big the robots are drawn. The model fit a body of radius 28 at 0.235,
+// so it scales with the physics body (ROBOT_RADIUS) and what you see is what
+// bumps.
+const ROBOT_MODEL_SCALE = 0.235 * (ROBOT_RADIUS / 28);
+
 // Where the follow camera sits relative to the robot, and where it looks.
 // It looks well ahead of the robot, so that from in front of the HIVE the
 // upward CELL is still in view below the scoreboard.
@@ -82,16 +90,19 @@ function polycarbonate() {
   });
 }
 
-// NECTAR are the big ARTIFACTS - the same 1.28x the physics uses for
-// their footprint, so what you see matches what you bump into.
-export const NECTAR_SCALE = 1.28;
-
 // How an ARTIFACT looks: blue or red NECTAR, or yellow POLLEN.
 type BallLook = 'B' | 'R' | 'G';
 const lookOf = (color: string, alliance?: string): BallLook =>
   color !== 'P' ? 'G' : alliance === 'red' ? 'R' : 'B';
 
-const ARTIFACT_RADIUS = 0.28;
+// POLLEN on the mats, the same size as in the physics so what you see is
+// what you bump into; NECTAR is NECTAR_SCALE times bigger.
+const ARTIFACT_RADIUS = POLLEN_RADIUS * SCALE;
+// What a robot is carrying sits in its storage in rows: three POLLEN or two
+// NECTAR to a row. They stay the size they are on the mats - this is that
+// size in the robot's own units - and the storage is built wide enough for
+// three of them across (STORAGE_INSIDE).
+const CARGO_POLLEN = ARTIFACT_RADIUS / ROBOT_MODEL_SCALE;
 // Height of an ARTIFACT's center when it sits on the mats.
 const restingHeight = (color: string) =>
   MAT_TOP + (color === 'P' ? ARTIFACT_RADIUS * NECTAR_SCALE : ARTIFACT_RADIUS);
@@ -249,6 +260,35 @@ function artifact(look: BallLook, base = ARTIFACT_RADIUS) {
   group.add(new THREE.Mesh(parts.seam, parts.seamColor[key]));
   group.scale.setScalar(radius);
   return group;
+}
+
+// Where each carried ARTIFACT sits in the storage, in its own units: NECTAR
+// rows on the floor, two to a row, then POLLEN rows on top, three to a row,
+// each row centred and the next stacked on it. `index` is the ARTIFACT's
+// place in the robot's cargo list.
+function cargoLayout(carried: string[]) {
+  const spots: { index: number; x: number; y: number }[] = [];
+  let floor = STORAGE_INSIDE.floor;
+  for (const color of ['P', 'G']) {
+    const perRow = color === 'P' ? 2 : 3;
+    const radius = CARGO_POLLEN * (color === 'P' ? NECTAR_SCALE : 1);
+    const pitch = STORAGE_INSIDE.width / perRow;
+    const indexes = carried.flatMap((item, index) =>
+      item === color ? [index] : [],
+    );
+    for (let start = 0; start < indexes.length; start += perRow) {
+      const row = indexes.slice(start, start + perRow);
+      row.forEach((index, k) =>
+        spots.push({
+          index,
+          x: (k - (row.length - 1) / 2) * pitch,
+          y: floor + radius,
+        }),
+      );
+      floor += radius * 2;
+    }
+  }
+  return spots;
 }
 
 // Seeded so every load of the field looks the same.
@@ -790,7 +830,7 @@ export function createArenaScene(
     [player, blue, 'ATLAS'],
     [bot, red, 'SCOUT-7'],
   ] as const) {
-    model.root.scale.setScalar(0.235);
+    model.root.scale.setScalar(ROBOT_MODEL_SCALE);
     scene.add(model.root);
     for (const side of [-1, 1]) {
       const plate = label(
@@ -803,9 +843,11 @@ export function createArenaScene(
       place(model.root, plate, side * 2.55, 1.15, 0);
     }
   }
-  const playerRing = ring(0.78, blue, 0.035);
+  // The rings round each robot grow with it.
+  const ringSize = 0.78 * (ROBOT_RADIUS / 28);
+  const playerRing = ring(ringSize, blue, 0.035);
   scene.add(playerRing);
-  const botRing = ring(0.78, red, 0.025);
+  const botRing = ring(ringSize, red, 0.025);
   scene.add(botRing);
   // Gold for ARTIFACTS and the HIVE; alliance blue when it points at the BASE.
   const aimGold = 0xf0c35b;
@@ -942,9 +984,10 @@ export function createArenaScene(
   const ballSpot = new THREE.Vector3();
   const ballTurn = new THREE.Quaternion();
   const ballSize = new THREE.Vector3();
+  // Each robot's cargo rides inside its storage module.
   const cargo = [new THREE.Group(), new THREE.Group()];
-  player.root.add(cargo[0]);
-  bot.root.add(cargo[1]);
+  player.groups.carry.add(cargo[0]);
+  bot.groups.carry.add(cargo[1]);
   const cargoSignature = ['', ''];
   const flights: Flight[] = [];
   const scoreLabels = new Map<
@@ -1079,9 +1122,11 @@ export function createArenaScene(
           actor.vx * Math.cos(actor.angle) + actor.vy * Math.sin(actor.angle);
         const turn = (error * Math.min(1, dt * 14)) / Math.max(dt, 0.001);
         model.moving.wheels.forEach((w) => {
-          const travel = forward * SCALE + turn * w.position.x * 0.235;
+          const travel =
+            forward * SCALE + turn * w.position.x * ROBOT_MODEL_SCALE;
           w.rotateX(
-            ((travel * dt) / (0.55 * 0.235)) * (w.position.x < 0 ? -1 : 1),
+            ((travel * dt) / (0.55 * ROBOT_MODEL_SCALE)) *
+              (w.position.x < 0 ? -1 : 1),
           );
         });
         const acceleration = scratchVelocity
@@ -1120,20 +1165,14 @@ export function createArenaScene(
       if (signature !== cargoSignature[index]) {
         disposeObject(cargo[index]);
         cargo[index].clear();
-        actor.carried.forEach((color, i) => {
+        for (const { index: i, x, y } of cargoLayout(actor.carried)) {
           const ball = artifact(
-            lookOf(color, index === 0 ? 'blue' : 'red'),
-            0.9,
+            lookOf(actor.carried[i], index === 0 ? 'blue' : 'red'),
+            CARGO_POLLEN,
           );
           ball.userData.arrival = i >= previousCarried[index].length ? 0.42 : 0;
-          place(
-            cargo[index],
-            ball,
-            (i % 2) * 1.8 - 0.9,
-            2.05 + Math.floor(i / 2) * 1.25,
-            0.65,
-          );
-        });
+          place(cargo[index], ball, x, y, STORAGE_INSIDE.middle);
+        }
         cargoSignature[index] = signature;
       }
       cargo[index].children.forEach((ball) => {
@@ -1228,8 +1267,8 @@ export function createArenaScene(
           // is capped: it still reads as rolling, just without the strobing.
           const spin =
             260 / Math.max(260, Math.hypot(piece.vx ?? 0, piece.vy ?? 0));
-          roll.x += ((piece.vy ?? 0) * spin * SCALE * dt) / 0.28;
-          roll.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / 0.28;
+          roll.x += ((piece.vy ?? 0) * spin * SCALE * dt) / ARTIFACT_RADIUS;
+          roll.z -= ((piece.vx ?? 0) * spin * SCALE * dt) / ARTIFACT_RADIUS;
         }
         // Falling out of a CELL: it drops from the mouth, gathering speed.
         let height = restingHeight(piece.color);
@@ -1260,9 +1299,7 @@ export function createArenaScene(
         flights.push({
           mesh: pickup,
           from: position(piece.x, piece.y, restingHeight(piece.color)),
-          to: models[collectorIndex].root.localToWorld(
-            new THREE.Vector3(0, 2, 0.65),
-          ),
+          to: new THREE.Vector3(),
           elapsed: 0,
           duration: 0.42,
           scored: false,
@@ -1282,9 +1319,11 @@ export function createArenaScene(
       const t = THREE.MathUtils.clamp(f.elapsed / f.duration, 0, 1);
       f.mesh.visible = f.elapsed >= 0;
       if (f.collector !== undefined) {
-        const root = models[f.collector].root;
-        root.localToWorld(mouth.set(0, 0.9, 3.1));
-        root.localToWorld(f.to.set(0, 2.05, 0.65));
+        const model = models[f.collector];
+        model.root.localToWorld(mouth.set(0, 0.9, 3.1));
+        model.groups.carry.localToWorld(
+          f.to.set(0, STORAGE_INSIDE.floor + 0.4, STORAGE_INSIDE.middle),
+        );
         if (t < 0.55) f.mesh.position.lerpVectors(f.from, mouth, t / 0.55);
         else f.mesh.position.lerpVectors(mouth, f.to, (t - 0.55) / 0.45);
       } else {

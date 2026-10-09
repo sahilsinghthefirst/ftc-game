@@ -10,12 +10,13 @@ import {
   FIELD_SIZE,
   FRAME_BARS,
   ROBOT_MARGIN,
+  ROBOT_RADIUS,
   type Bar,
 } from './field.ts';
 
 // How far a robot's center stays off a solid object, matching the collision
-// response in `resolveObstacle`.
-export const ROBOT_CLEARANCE = 29;
+// response in `resolveObstacle`: its body, and a hair more.
+export const ROBOT_CLEARANCE = ROBOT_RADIUS + 1;
 
 // Solid things a robot has to drive around, with the clearance already
 // folded into their thickness.

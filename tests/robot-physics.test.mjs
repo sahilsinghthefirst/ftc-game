@@ -41,7 +41,10 @@ import {
   LOAD_FRONT,
   RED_BASE,
   RED_BASE_ZONE,
+  NECTAR_RADIUS,
+  POLLEN_RADIUS,
   ROBOT_MARGIN,
+  ROBOT_RADIUS,
   SPILL_MOUTH,
   spillMouth,
   TILE,
@@ -231,11 +234,11 @@ test('the field is a square of six by six mats', () => {
 });
 
 test('every ARTIFACT starts in a row against the wall, as in BIOBUZZ', () => {
-  const radiusOf = (color) => (color === 'P' ? 18 : 14);
+  const radiusOf = (color) => (color === 'P' ? NECTAR_RADIUS : POLLEN_RADIUS);
   for (const [x, y, color] of pieceLayout) {
     const radius = radiusOf(color);
     // Inside the walls, but touching distance from one of them.
-    const near = BALL_MARGIN + radius - 14;
+    const near = BALL_MARGIN + radius - POLLEN_RADIUS;
     assert.ok(x >= near && x <= FIELD_SIZE - near, `x ${x}`);
     assert.ok(y >= near && y <= FIELD_SIZE - near, `y ${y}`);
     const toWall = Math.min(x, y, FIELD_SIZE - x, FIELD_SIZE - y);
@@ -344,7 +347,9 @@ test('a tipped CELL pours out only on its own side, onto open mats', () => {
             shot.landY > BALL_MARGIN && shot.landY < FIELD_SIZE - BALL_MARGIN,
           );
           for (const bar of FRAME_BARS)
-            assert.ok(barContact(bar, shot.landX, shot.landY).gap > 14);
+            assert.ok(
+              barContact(bar, shot.landX, shot.landY).gap > POLLEN_RADIUS,
+            );
           // Launched at the speed that settles it on its spot.
           const reach = Math.hypot(shot.landX - shot.x, shot.landY - shot.y);
           const launch = Math.hypot(shot.vx, shot.vy);
@@ -448,7 +453,10 @@ test('the A-frame base bars stop loose ARTIFACTS', () => {
     active: true,
   };
   for (let frame = 0; frame < 120; frame += 1) rollBalls([ball], [], step);
-  assert.ok(ball.x >= bar.ax + bar.r + 14 - 1e-6, 'it went through the bar');
+  assert.ok(
+    ball.x >= bar.ax + bar.r + POLLEN_RADIUS - 1e-6,
+    'it went through the bar',
+  );
 });
 
 test('a spilled ARTIFACT rolls out to about where it was aimed', () => {
@@ -488,7 +496,8 @@ test('balls receive a bump, settle and stay finite at exact overlaps', () => {
   const ball = { x: 220, y: 200, active: true };
   rollBalls([ball], [robot], 1 / 60);
   assert.ok(ball.vx > 0);
-  assert.equal(ball.x, 242);
+  // Pushed to just touching: the robot's body plus the ball's.
+  assert.equal(ball.x, 200 + ROBOT_RADIUS + POLLEN_RADIUS);
   for (let i = 0; i < 180; i++) rollBalls([ball], [], 1 / 60);
   assert.ok(Math.abs(ball.vx) < 0.01);
   const overlaps = [
@@ -502,8 +511,15 @@ test('balls receive a bump, settle and stay finite at exact overlaps', () => {
 });
 
 test('ball collisions transfer momentum along the collision normal only', () => {
+  // Two POLLEN just overlapping, one rolling straight into the other.
   const a = { x: 300, y: 200, vx: 0, vy: 100, active: true };
-  const b = { x: 300, y: 225, vx: 0, vy: 0, active: true };
+  const b = {
+    x: 300,
+    y: 200 + POLLEN_RADIUS * 2 - 3,
+    vx: 0,
+    vy: 0,
+    active: true,
+  };
   rollBalls([a, b], [], 1 / 60);
   assert.ok(b.vy > 0);
   assert.equal(b.vx, 0);

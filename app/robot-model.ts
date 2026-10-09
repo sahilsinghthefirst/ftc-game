@@ -608,42 +608,68 @@ function addCollector(
   return group;
 }
 
+// The inside of every storage module, in its own units: wall to wall, front
+// to back, the top of its floor, and its middle front to back. It is a hopper
+// the full width of the chassis, sized so the balls it carries are the same
+// size as on the mats - three POLLEN or two NECTAR to a row - and raised on
+// standoffs clear of the Control Hub and battery underneath.
+export const STORAGE_INSIDE = {
+  width: 4.72,
+  depth: 2.1,
+  floor: 1.72,
+  middle: 0.55,
+};
+
 function addStorage(root: THREE.Group, id: string, slot: number) {
   const group = new THREE.Group();
   group.position.z = (slot - 1) * 0.28;
-  group.add(bracket(-1.15, 1.1, 0.75), bracket(1.15, 1.1, 0.75, Math.PI));
-  const tall = id === 'stackpack';
-  const height = tall ? 2.05 : id === 'pocket' ? 0.78 : 1.22;
+  const { width, depth, floor: floorY, middle } = STORAGE_INSIDE;
+  // Wall height follows how much the module holds: one row of NECTAR for
+  // the indexer and the hopper, two of POLLEN for the tall magazine.
+  const height = id === 'stackpack' ? 3.2 : id === 'pocket' ? 1.6 : 2.0;
   const panelMaterial = material(0x4d8aa4, {
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.38,
     roughness: 0.2,
     metalness: 0,
     side: THREE.DoubleSide,
   });
+  const outside = width + 0.16;
+  // Open at the front, where the intake feeds it.
   const back = new THREE.Mesh(
-    new THREE.BoxGeometry(2.35, height, 0.08),
+    new THREE.BoxGeometry(outside, height, 0.08),
     panelMaterial,
   );
-  back.position.set(0, 1.18 + height / 2, -0.05);
+  back.position.set(0, floorY + height / 2, middle - depth / 2 - 0.04);
   const left = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, height, 1.15),
+    new THREE.BoxGeometry(0.08, height, depth),
     panelMaterial,
   );
-  left.position.set(-1.16, 1.18 + height / 2, 0.5);
+  left.position.set(-(width / 2 + 0.04), floorY + height / 2, middle);
   const right = left.clone();
-  right.position.x = 1.16;
+  right.position.x = width / 2 + 0.04;
   const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(2.35, 0.08, 1.15),
+    new THREE.BoxGeometry(outside, 0.08, depth),
     panelMaterial,
   );
-  floor.position.set(0, 1.2, 0.5);
+  floor.position.set(0, floorY - 0.04, middle);
   group.add(back, left, right, floor);
-  // The indexer is split into four bays, one per slot.
+  // Four standoffs carry it on the chassis side rails.
+  const post = floorY - 0.9;
+  for (const x of [-2.2, 2.2])
+    for (const z of [middle - depth / 2 + 0.15, middle + depth / 2 - 0.15]) {
+      const standoff = box(0.14, post, 0.14, palette.aluminum, {
+        metalness: 0.8,
+      });
+      standoff.position.set(x, 0.9 + post / 2, z);
+      group.add(standoff, bolt(x, floorY + 0.01, z));
+    }
+  // The indexer's floor is split into bays three across, one per POLLEN in a
+  // row, by low ridges a big NECTAR can still sit across.
   if (id === 'pocket')
-    for (const x of [-0.58, 0, 0.58]) {
-      const divider = box(0.08, 0.66, 1.0, palette.aluminumDark);
-      divider.position.set(x, 1.55, 0.5);
+    for (const x of [-width / 6, width / 6]) {
+      const divider = box(0.08, 0.14, depth - 0.1, palette.aluminumDark);
+      divider.position.set(x, floorY + 0.07, middle);
       group.add(divider);
     }
   group.userData.category = 'carry';

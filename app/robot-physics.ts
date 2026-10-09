@@ -5,6 +5,8 @@ import {
   FRAME_BARS,
   INCH,
   ROBOT_MARGIN,
+  POLLEN_RADIUS,
+  ROBOT_RADIUS,
   type CellEnd,
 } from './field.ts';
 import { BOT_OBSTACLES } from './bot-driver.ts';
@@ -18,7 +20,7 @@ export const BALL_DRAG = 3.8;
 // long way before stopping, so they spread across the mats without looking
 // flung.
 export const SPILL_DRAG = 0.75;
-export const BALL_RADIUS = 14;
+export const BALL_RADIUS = POLLEN_RADIUS;
 
 export function rollSpeed(distance: number, drag = BALL_DRAG) {
   return distance * drag;
@@ -316,7 +318,7 @@ export function rollBalls(balls: Ball[], robots: Body[], dt: number) {
       const dx = ball.x - robot.x,
         dy = ball.y - robot.y;
       const d = Math.hypot(dx, dy);
-      const contact = 28 + size;
+      const contact = ROBOT_RADIUS + size;
       if (d >= contact) continue;
       const nx = d > 0.001 ? dx / d : Math.cos(robot.angle);
       const ny = d > 0.001 ? dy / d : Math.sin(robot.angle);
