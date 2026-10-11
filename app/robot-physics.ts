@@ -219,10 +219,15 @@ type Ball = {
 // Handling is the workshop trait that decides how hard a drivetrain can change
 // the robot's velocity: `acceleration` while the driver is pushing a direction
 // and `braking` once they let go. Top speed is a separate trait on purpose, so
-// a quick robot can still be slow to get going or slow to stop.
+// a quick robot can still be slow to get going or slow to stop. Sized for
+// real FTC top speeds, so a nimble robot is at full speed in about a quarter
+// of a second and a sluggish one takes twice that.
 export function handlingProfile(handling: number) {
   const rating = Math.max(1, Math.min(12, handling));
-  return { acceleration: 430 + rating * 75, braking: 300 + rating * 120 };
+  return {
+    acceleration: (430 + rating * 75) * 1.6,
+    braking: (300 + rating * 120) * 1.6,
+  };
 }
 
 export function driveVelocity(

@@ -290,8 +290,8 @@ test('each BASE is the whole mat in its bottom corner, flush with the walls', ()
 });
 
 test('the HIVE structure is laid out like BIOBUZZ, blue left and red right', () => {
-  // Built to the manual at 3.75 field units to the inch.
-  assert.equal(INCH, 3.75);
+  // Built to the manual at true scale: a 24 in. mat is one TILE.
+  assert.equal(INCH * 24, TILE);
   assert.ok(Math.abs(HIVE_X.red - HIVE_X.blue - 25.5 * INCH) < 1e-9);
   assert.ok(HIVE_X.blue < FIELD_CENTER && HIVE_X.red > FIELD_CENTER);
   assert.equal(FIELD_CENTER - HIVE_X.blue, HIVE_X.red - FIELD_CENTER);

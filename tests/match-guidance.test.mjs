@@ -13,6 +13,7 @@ import {
   inLoadingRange,
   mayCollect,
   playerTarget,
+  reachProfile,
   GOAL_TIP_AT,
   TIP_POINTS,
 } from '../app/match-guidance.ts';
@@ -94,14 +95,30 @@ test('The guide leads to whichever CELL is up, and switches sides when it tips',
   assert.equal(far.x, HIVE_X.blue);
   // The loading spot itself is in range of even the shortest lift.
   for (const end of [1, -1])
-    assert.ok(inLoadingRange(loadingSpot('blue', end), 'blue', end, 85));
+    assert.ok(
+      inLoadingRange(
+        loadingSpot('blue', end),
+        'blue',
+        end,
+        reachProfile('swingarm').radius,
+      ),
+    );
 });
 
 test('An upward CELL only loads from out in front of its open end', () => {
   const mouth = cellMouth('blue', 1);
-  const reach = 220;
+  const reach = reachProfile('cascade').radius;
   // Straight out in front: yes.
-  assert.ok(inLoadingRange({ x: mouth.x, y: mouth.y + 60 }, 'blue', 1, reach));
+  assert.ok(
+    inLoadingRange(
+      { x: mouth.x, y: FIELD_CENTER + LOAD_FRONT + 30 },
+      'blue',
+      1,
+      reach,
+    ),
+  );
+  // Parked with its front under the opening: no.
+  assert.ok(!inLoadingRange({ x: mouth.x, y: mouth.y + 60 }, 'blue', 1, reach));
   // Under the HIVE, right beneath the mouth: no.
   assert.ok(!inLoadingRange({ x: mouth.x, y: mouth.y }, 'blue', 1, reach));
   // From behind, on the far side of the HIVE: no, however long the reach.

@@ -24,12 +24,13 @@ import {
   topSpeed,
   turnRate,
 } from '../app/match-guidance.ts';
+import { INCH, ROBOT_WIDTH } from '../app/field.ts';
 
 // Pull the part list straight out of the workshop so the copy under test is
 // the copy players read.
 const source = readFileSync('app/field-lab.tsx', 'utf8');
 const pattern =
-  /id: '([a-z0-9]+)',\s*\n\s*category: '(\w+)',\s*\n\s*name: '([^']+)',\s*\n\s*code: '[^']+',\s*\n\s*blurb: '([^']*)',\s*\n\s*strength: '([^']*)',\s*\n\s*tradeoff: '([^']*)',\s*\n\s*traits: \{ ([^}]*) \},\s*\n\s*weight: (\d+),/g;
+  /id: '([a-z0-9]+)',\s*category: '(\w+)',\s*name: '([^']+)',\s*code: '[^']+',\s*blurb:\s*'([^']*)',\s*strength:\s*'([^']*)',\s*tradeoff:\s*'([^']*)',\s*traits: \{ ([^}]*) \},\s*weight: (\d+),/g;
 const modules = [];
 let match;
 while ((match = pattern.exec(source))) {
@@ -81,8 +82,8 @@ test('every part in the workshop is one the match loop knows about', () => {
 
 test('drivetrain cards match their speed, turn and strafe numbers', () => {
   const speeds = drives.map(driveSpeed);
-  // Orbit Omni: "Huge top speed" / "Skids a long way past the GOAL" - the
-  // fastest base, with the worst handling of any part in the workshop.
+  // Orbit Omni: "6 ft/s, the fastest base" / "Handling -6, and the easiest
+  // to shove" - the worst handling of any part in the workshop.
   assert.equal(Math.max(...speeds), driveSpeed('orbit'));
   assert.equal(
     Math.min(...modules.map((m) => m.traits.handling)),
@@ -90,23 +91,25 @@ test('drivetrain cards match their speed, turn and strafe numbers', () => {
   );
   assert.ok(byId.orbit.traits.handling <= -6);
 
-  // Anchor Traction: "Stops and turns instantly" / "Slowest base here".
+  // Anchor Traction: "Fastest turning, and Handling +5" / "3 ft/s, the
+  // slowest base".
   assert.equal(Math.min(...speeds), driveSpeed('anchor'));
-  assert.equal(driveSpeed('anchor'), 185);
+  // About 3 ft/s, a realistic traction base.
+  assert.equal(driveSpeed('anchor'), 36 * INCH);
   assert.equal(
     Math.max(...modules.map((m) => m.traits.handling)),
     byId.anchor.traits.handling,
   );
   assert.equal(Math.max(...drives.map(turnRate)), turnRate('anchor'));
 
-  // Trailblazer 6WD: "Turns like a bus" - slowest turn and least strafe.
+  // Trailblazer 6WD: "Slowest turning, almost no strafe".
   assert.equal(Math.min(...drives.map(turnRate)), turnRate('trailblazer'));
   assert.equal(
     Math.min(...drives.map(strafeFactor)),
     strafeFactor('trailblazer'),
   );
 
-  // Comet Mecanum: "Moves in every direction" - full sideways power.
+  // Comet Mecanum: "Full-speed strafe in any direction".
   assert.equal(strafeFactor('comet'), 1);
   assert.equal(Math.max(...drives.map(strafeFactor)), strafeFactor('comet'));
 });
@@ -124,8 +127,8 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
   const jaws = collectProfile('dualjaw');
   const sorter = collectProfile('sorter');
 
-  // WideWave: "Huge pickup zone, barely any weight" / "Crawls while it
-  // swallows each one".
+  // WideWave: "Grabs 10 in. past the bumper" / "30% speed for 0.7 s on each
+  // grab" - the widest reach, on the lightest collector.
   assert.equal(
     Math.max(wide.radius, twin.radius, jaws.radius, sorter.radius),
     wide.radius,
@@ -142,8 +145,9 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
   );
   assert.ok(byId.widewave.traits.speed > 0, 'the light sweeper must add speed');
 
-  // TwinFlex: "Grabs one almost instantly" / "Heavy, and slows the whole
-  // robot" - the heaviest part of its kind, and it really does cut top speed.
+  // TwinFlex: "Ready again in 0.14 s, the fastest" / "16% slower top speed,
+  // 3 in. reach" - the heaviest part of its kind, and it really does cut top
+  // speed.
   assert.equal(
     Math.min(wide.cycle, twin.cycle, jaws.cycle, sorter.cycle),
     twin.cycle,
@@ -161,8 +165,9 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
   );
   for (const light of [wide, jaws, sorter]) assert.equal(light.topSpeed, 1);
 
-  // DualJaw: "Takes two in one grab" / "Very slow clamp, wasted on a lone
-  // one" - the slowest clamp of all, bogging the robot down the longest.
+  // DualJaw: "Takes two ARTIFACTS in one grab" / "1.6 s per grab, at 40%
+  // speed for 1 s" - the slowest clamp of all, bogging the robot down the
+  // longest.
   assert.equal(jaws.grab, 2);
   assert.ok(
     [wide, twin, sorter].every((p) => p.grab === 1),
@@ -178,7 +183,7 @@ test('collector cards match their reach, cycle, weight and appetite', () => {
     jaws.dragFor,
   );
 
-  // NectarSort: "Drives straight past all POLLEN".
+  // NectarSort: "Cannot pick up POLLEN at all".
   assert.equal(sorter.takes, 'P');
   assert.equal(collectorTakes('sorter', 'P'), true);
   assert.equal(collectorTakes('sorter', 'G'), false);
@@ -195,7 +200,7 @@ test('storage cards match their slot counts and NECTAR handling', () => {
   assert.match(byId.lowbin.tradeoff, /four/i);
   assert.match(byId.stackpack.blurb, /six/i);
 
-  // StackPack: "Carries the most per trip" / "Tall, heavy and sluggish".
+  // StackPack: "Holds six POLLEN or three NECTAR" / "Handling -3".
   const capacities = inCategory('carry').map((m) => carryCapacity(m.id));
   assert.equal(Math.max(...capacities), carryCapacity('stackpack'));
   assert.ok(byId.stackpack.traits.handling < 0);
@@ -210,7 +215,7 @@ test('storage cards match their slot counts and NECTAR handling', () => {
   for (const part of inCategory('carry'))
     if (part.id !== 'lowbin') assert.equal(artifactSpace('P', part.id), 2);
 
-  // Pocket Indexer: "Almost no weight at all".
+  // Pocket Indexer: the lightest storage.
   assert.equal(
     Math.min(...inCategory('carry').map((m) => m.weight)),
     byId.pocket.weight,
@@ -237,9 +242,9 @@ test('the reach parts trade reach for speed, in order on the tray', () => {
     assert.ok(byId[longer].traits.speed < byId[shorter].traits.speed);
     assert.ok(byId[longer].traits.score >= byId[shorter].traits.score);
   }
-  // Arc Pivot Arm: "Lightest lift, so the fastest robot" / "Must drive right
-  // up to the GOAL". Compact Elevator: "Fair reach with no speed cost".
-  // Cascade Slides: "By far the longest reach" / "the slowest robot".
+  // Arc Pivot Arm: "12% faster top speed" / "Loads only within 17 in. of
+  // the CELL". Compact Elevator: "no speed change". Cascade Slides: "the
+  // longest reach" / "20% slower top speed".
   assert.equal(REACH_ORDER[0], 'swingarm');
   assert.ok(reachProfile('swingarm').topSpeed > 1);
   assert.equal(reachProfile('elevator').topSpeed, 1);
@@ -255,13 +260,13 @@ test('the reach parts trade reach for speed, in order on the tray', () => {
 });
 
 test('cards that promise a mechanic actually have one behind them', () => {
-  // Trailblazer 6WD: "Wins every push" - it must shove hardest of the four.
+  // Trailblazer 6WD: "the hardest to shove" - it holds its ground best.
   const resists = drives.map(shoveResist);
   assert.equal(Math.max(...resists), shoveResist('trailblazer'));
-  // Orbit Omni gives the most ground, which is what "skates" means in contact.
+  // Orbit Omni: "the easiest to shove".
   assert.equal(Math.min(...resists), shoveResist('orbit'));
 
-  // Auto Align: "Costs real top speed".
+  // Auto Align: "12% slower top speed".
   assert.ok(topSpeed({ ...base, assist: 'align' }) < topSpeed(base));
 });
 
@@ -277,28 +282,28 @@ test('reach decides where you load from, scoring decides how', () => {
   const fly = scoreProfile('flywheel');
   const cycles = scorers.map((id) => scoreProfile(id).cycle);
 
-  // Burst Feeder: "Fills the GOAL fastest" / "Only fires with the robot
-  // stopped".
+  // Burst Feeder: "One every 0.15 s, the fastest" / "Only fires with the
+  // robot stopped".
   assert.equal(Math.min(...cycles), burst.cycle);
   assert.equal(burst.needsStop, true);
   assert.equal(canFire('burst', 0), true);
   assert.equal(canFire('burst', STOPPED_SPEED + 1), false);
 
-  // TrueGate Indexer: "Loads on the move and never misses" / "Slow between
-  // shots".
+  // TrueGate Indexer: "Fires on the move, never misses" / "0.45 s between
+  // loads".
   assert.equal(gate.needsStop, false);
   assert.equal(gate.miss, 0);
   assert.equal(canFire('truegate', 300), true);
   assert.ok(gate.cycle > fly.cycle && gate.cycle > burst.cycle);
 
-  // TipTray: "Empties your storage in one motion" / "Must stop, then a very
-  // long reload".
+  // TipTray: "Empties all storage in one load" / "Must stop, then 1.1 s to
+  // reset".
   assert.equal(tray.batch, 'all');
   assert.equal(tray.needsStop, true);
   assert.equal(Math.max(...cycles), tray.cycle);
 
-  // Vector Flywheel: "Quick shots on the move" / "One shot in four bounces
-  // out".
+  // Vector Flywheel: "One every 0.25 s, even while driving" / "One shot in
+  // four bounces out".
   assert.equal(fly.needsStop, false);
   assert.equal(fly.miss, 0.25);
   assert.ok(fly.cycle < gate.cycle);
@@ -316,12 +321,12 @@ test('reach decides where you load from, scoring decides how', () => {
 test('each assist guides a different part of the match, none all of it', () => {
   const kinds = ['piece', 'goal', 'base'];
   // Pathfinder: "Draws the route to the next ARTIFACT, and home to BASE at
-  // the end" / "No help at the GOAL".
+  // the end" / "No guide to the HIVE while carrying".
   assert.deepEqual(
     kinds.filter((kind) => assistGuides('pathfinder', kind)),
     ['piece', 'base'],
   );
-  // Auto Align: "Points the way to the GOAL".
+  // Auto Align: "Points the way to the upward CELL".
   assert.deepEqual(
     kinds.filter((kind) => assistGuides('align', kind)),
     ['goal'],
@@ -333,6 +338,58 @@ test('each assist guides a different part of the match, none all of it', () => {
   );
   // Without a guiding assist, nothing on the field points anywhere.
   for (const kind of kinds) assert.equal(assistGuides('none', kind), false);
+});
+
+test('every number printed on a card is the number the match uses', () => {
+  const says = (id, text) => {
+    const copy = `${byId[id].blurb} ${byId[id].strength} ${byId[id].tradeoff}`;
+    assert.ok(copy.includes(text), `${byId[id].name} should say "${text}"`);
+  };
+  const percent = (factor) => `${Math.round(Math.abs(1 - factor) * 100)}%`;
+  const inches = (fieldUnits) => `${Math.round(fieldUnits / INCH)} in.`;
+
+  // Top speeds, in feet a second.
+  for (const id of drives) says(id, `${driveSpeed(id) / INCH / 12} ft/s`);
+
+  // How far past the bumper each collector grabs, and how long it takes.
+  const pastBumper = (id) => collectProfile(id).radius - ROBOT_WIDTH / 2;
+  says('widewave', inches(pastBumper('widewave')));
+  says('twinflex', inches(pastBumper('twinflex')));
+  says('sorter', inches(pastBumper('sorter')));
+  says('widewave', percent(1 - collectProfile('widewave').drag));
+  says('widewave', `${collectProfile('widewave').dragFor} s`);
+  says('twinflex', `${collectProfile('twinflex').cycle} s`);
+  says('twinflex', percent(collectProfile('twinflex').topSpeed));
+  says('dualjaw', `${collectProfile('dualjaw').cycle} s per grab`);
+  says('dualjaw', percent(1 - collectProfile('dualjaw').drag));
+  says('dualjaw', `${collectProfile('dualjaw').dragFor} s`);
+  says('sorter', `${collectProfile('sorter').cycle} s`);
+
+  // Where each lift loads from, and what it does to top speed.
+  for (const id of REACH_ORDER) {
+    says(id, inches(reachProfile(id).radius));
+    if (reachProfile(id).topSpeed !== 1)
+      says(id, percent(reachProfile(id).topSpeed));
+  }
+
+  // Reloads.
+  for (const id of scorers) says(id, `${scoreProfile(id).cycle} s`);
+
+  // Auto Align's extra reach (20 field units) and its speed cost.
+  says('align', `${(20 / INCH).toFixed(1)} in.`);
+  says(
+    'align',
+    percent(topSpeed({ ...base, assist: 'align' }) / topSpeed(base)),
+  );
+
+  // Any Handling a card quotes is the part's own Handling trait.
+  for (const part of modules) {
+    const quoted = `${part.strength} ${part.tradeoff}`.match(
+      /Handling ([+-]\d+)/,
+    );
+    if (quoted)
+      assert.equal(Number(quoted[1]), part.traits.handling, part.name);
+  }
 });
 
 test('no card still describes the old ruleset', () => {

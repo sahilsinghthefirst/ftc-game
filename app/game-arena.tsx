@@ -15,17 +15,19 @@ import { GraphicsPicker } from './graphics-picker';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
 import {
-  BLUE_BASE,
   BLUE_BASE_ZONE,
+  BOT_START,
   CELL_PRELOAD,
   cellMouth,
   FIELD_CENTER,
   HIVE_START_UP,
+  INCH,
   RED_BASE,
   RED_BASE_ZONE,
   ROBOT_RADIUS,
   inZone,
   loadingSpot,
+  PLAYER_START,
   NECTAR_RADIUS,
   spillMouth,
   type Alliance,
@@ -46,6 +48,7 @@ import {
   BALL_RADIUS,
 } from './robot-physics';
 import {
+  BOT_LOAD_REACH,
   canCarry,
   carryCapacity,
   cellSide,
@@ -204,8 +207,8 @@ const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
 
 function createWorld(): World {
   const player = {
-    x: BLUE_BASE.x + 40,
-    y: BLUE_BASE.y - 30,
+    x: PLAYER_START.x,
+    y: PLAYER_START.y,
     vx: 0,
     vy: 0,
     angle: -Math.PI / 2,
@@ -214,8 +217,8 @@ function createWorld(): World {
     cooldown: 0,
   };
   const bot = {
-    x: RED_BASE.x - 40,
-    y: RED_BASE.y - 30,
+    x: BOT_START.x,
+    y: BOT_START.y,
     vx: 0,
     vy: 0,
     angle: -Math.PI / 2,
@@ -762,12 +765,15 @@ export function GameArena({
         }
       }
       const heading = botHeading(bot, world.botTarget, botMindRef.current, dt);
+      // Real FTC speeds, in inches a second: a cautious rookie robot up to a
+      // quick, well-driven one, all a little slower than the fastest bases.
       const botSpeed =
-        difficulty === 'rookie' ? 165 : difficulty === 'rival' ? 205 : 240;
+        (difficulty === 'rookie' ? 31 : difficulty === 'rival' ? 38 : 45) *
+        INCH;
       // Scout-7 gets a handling rating of its own, so a tougher rival also
       // corners and stops better instead of only driving faster.
       const botAccel =
-        difficulty === 'rookie' ? 520 : difficulty === 'rival' ? 660 : 840;
+        difficulty === 'rookie' ? 830 : difficulty === 'rival' ? 1060 : 1340;
       const botCoast =
         difficulty === 'rookie' ? 0.82 : difficulty === 'rival' ? 0.7 : 0.58;
       if (heading.x !== 0 || heading.y !== 0) {
@@ -797,7 +803,7 @@ export function GameArena({
 
       if (bot.cooldown <= 0) {
         if (
-          inLoadingRange(bot, 'red', redHive.up, 95) &&
+          inLoadingRange(bot, 'red', redHive.up, BOT_LOAD_REACH) &&
           bot.carried.length > 0
         ) {
           const color = bot.carried.shift()!;
@@ -994,9 +1000,9 @@ export function GameArena({
   };
   const resetRobot = () => {
     const robot = worldRef.current.player;
-    robot.x = BLUE_BASE.x + 40;
+    robot.x = PLAYER_START.x;
     robot.px = robot.x;
-    robot.y = BLUE_BASE.y - 30;
+    robot.y = PLAYER_START.y;
     robot.py = robot.y;
     robot.vx = 0;
     robot.vy = 0;

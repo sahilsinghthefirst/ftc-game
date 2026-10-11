@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -139,9 +140,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Comet Mecanum',
     code: 'DRV-01',
-    blurb: 'Slides sideways to line up on the HIVE.',
-    strength: 'Moves in every direction',
-    tradeoff: 'Drinks battery',
+    blurb: 'Mecanum rollers drive it sideways at full power.',
+    strength: 'Full-speed strafe in any direction',
+    tradeoff: '4.5 ft/s, slower than omni or 6WD',
     traits: { speed: 5, handling: 0, control: 2, collect: 0, score: 0 },
     weight: 3,
     power: 5,
@@ -152,9 +153,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Trailblazer 6WD',
     code: 'DRV-02',
-    blurb: 'Six wheels that pile on speed in a straight line.',
-    strength: 'Fast in a straight line, wins every push',
-    tradeoff: 'Turns like a bus',
+    blurb: 'Six wheels: quick in a straight line and hard to push.',
+    strength: '5.5 ft/s, and the hardest to shove',
+    tradeoff: 'Slowest turning, almost no strafe',
     traits: { speed: 5, handling: 3, control: 2, collect: 0, score: 0 },
     weight: 5,
     power: 3,
@@ -165,9 +166,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Orbit Omni',
     code: 'DRV-03',
-    blurb: 'The fastest base on the mats.',
-    strength: 'Huge top speed',
-    tradeoff: 'Skids a long way past the HIVE',
+    blurb: 'Light omni wheels with the highest top speed.',
+    strength: '6 ft/s, the fastest base',
+    tradeoff: 'Handling -6, and the easiest to shove',
     traits: { speed: 6, handling: -6, control: 0, collect: 0, score: 0 },
     weight: 1,
     power: 3,
@@ -178,9 +179,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Anchor Traction',
     code: 'DRV-04',
-    blurb: 'Grips hard, stops on a dime and spins in place.',
-    strength: 'Stops and turns instantly',
-    tradeoff: 'Slowest base here',
+    blurb: 'Grippy traction wheels that pivot in place.',
+    strength: 'Fastest turning, and Handling +5',
+    tradeoff: '3 ft/s, the slowest base',
     traits: { speed: 0, handling: 5, control: 3, collect: 0, score: 0 },
     weight: 3,
     power: 2,
@@ -191,9 +192,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'WideWave Roller',
     code: 'INT-01',
-    blurb: 'A light, wide sweeper that scoops from anywhere in front.',
-    strength: 'Huge pickup zone, barely any weight',
-    tradeoff: 'Crawls while it swallows each one',
+    blurb: 'A light, wide roller that grabs from well in front.',
+    strength: 'Grabs 10 in. past the bumper',
+    tradeoff: '30% speed for 0.7 s on each grab',
     traits: { speed: 3, handling: 1, control: -1, collect: 1, score: 0 },
     weight: 1,
     power: 3,
@@ -204,9 +205,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'TwinFlex Intake',
     code: 'INT-02',
-    blurb: 'Heavy twin rollers that inhale an ARTIFACT on contact.',
-    strength: 'Grabs one almost instantly',
-    tradeoff: 'Heavy, and slows the whole robot',
+    blurb: 'Heavy twin rollers that pull an ARTIFACT in on contact.',
+    strength: 'Ready again in 0.14 s, the fastest',
+    tradeoff: '16% slower top speed, 3 in. reach',
     traits: { speed: -4, handling: -1, control: 0, collect: 5, score: 0 },
     weight: 6,
     power: 5,
@@ -218,8 +219,8 @@ const modules: Module[] = [
     name: 'DualJaw Grabber',
     code: 'INT-03',
     blurb: 'Two jaws that close on a pair of ARTIFACTS at once.',
-    strength: 'Takes two in one grab',
-    tradeoff: 'Very slow clamp, wasted on a lone one',
+    strength: 'Takes two ARTIFACTS in one grab',
+    tradeoff: '1.6 s per grab, at 40% speed for 1 s',
     traits: { speed: -1, handling: -1, control: 1, collect: 2, score: 0 },
     weight: 4,
     power: 4,
@@ -230,9 +231,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'NectarSort Funnel',
     code: 'INT-04',
-    blurb: 'A funnel shaped to swallow only your big blue NECTAR.',
-    strength: 'Fills a CELL fastest at 1.5 a time',
-    tradeoff: 'Drives straight past all POLLEN',
+    blurb: 'A funnel that only takes blue NECTAR, worth 1.5 each.',
+    strength: 'Grabs 7 in. out, ready again in 0.3 s',
+    tradeoff: 'Cannot pick up POLLEN at all',
     traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
     power: 2,
@@ -243,8 +244,8 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Low Rider Hopper',
     code: 'STR-01',
-    blurb: 'An open bin that swallows a big NECTAR whole.',
-    strength: 'NECTAR takes one slot, not two',
+    blurb: 'An open bin wide enough for big NECTAR.',
+    strength: 'NECTAR fills one slot, not two',
     tradeoff: 'Only four slots',
     traits: { speed: 1, handling: 2, control: 1, collect: 0, score: 0 },
     weight: 2,
@@ -256,9 +257,9 @@ const modules: Module[] = [
     category: 'carry',
     name: 'StackPack Magazine',
     code: 'STR-02',
-    blurb: 'Six slots stacked high over the deck.',
-    strength: 'Carries the most per trip',
-    tradeoff: 'Tall, heavy and sluggish',
+    blurb: 'A tall magazine with six slots.',
+    strength: 'Holds six POLLEN or three NECTAR',
+    tradeoff: 'Handling -3: slower starts and stops',
     traits: { speed: -2, handling: -3, control: -2, collect: 1, score: 0 },
     weight: 5,
     power: 1,
@@ -269,9 +270,9 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Pocket Indexer',
     code: 'STR-04',
-    blurb: 'The lightest way to carry four.',
-    strength: 'Almost no weight at all',
-    tradeoff: 'Four slots, but NECTAR takes two each',
+    blurb: 'Four light slots inside the frame.',
+    strength: 'Handling +3: quicker starts and stops',
+    tradeoff: 'Four slots, and NECTAR fills two each',
     traits: { speed: 2, handling: 3, control: 0, collect: 0, score: 1 },
     weight: 1,
     power: 2,
@@ -282,9 +283,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Arc Pivot Arm',
     code: 'RCH-02',
-    blurb: 'A light arm that swings up to the rim.',
-    strength: 'Lightest lift, so the fastest robot',
-    tradeoff: 'Must drive right up to the CELL',
+    blurb: 'A light arm that swings up to the CELL.',
+    strength: '12% faster top speed',
+    tradeoff: 'Loads only within 17 in. of the CELL',
     traits: { speed: 3, handling: 1, control: 0, collect: 0, score: 0 },
     weight: 2,
     power: 3,
@@ -295,9 +296,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Compact Elevator',
     code: 'RCH-03',
-    blurb: 'Lifts straight up, easy to line up.',
-    strength: 'Fair reach with no speed cost',
-    tradeoff: 'Has to get fairly close',
+    blurb: 'A lift that rises straight up to the CELL.',
+    strength: 'Loads from 22 in., no speed change',
+    tradeoff: 'Shorter reach than turret or slides',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 3,
     power: 3,
@@ -308,9 +309,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Orbit Turret',
     code: 'RCH-04',
-    blurb: 'Swings the scorer up into the CELL.',
-    strength: 'Loads from well out',
-    tradeoff: 'Heavy turret slows the robot',
+    blurb: 'A turret that swings the scorer over to the CELL.',
+    strength: 'Loads from 28 in. away',
+    tradeoff: '10% slower top speed, Handling -2',
     traits: { speed: -2, handling: -2, control: 1, collect: 0, score: 2 },
     weight: 4,
     power: 3,
@@ -321,9 +322,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Cascade Slides',
     code: 'RCH-01',
-    blurb: 'Loads the HIVE from well back in the field.',
-    strength: 'By far the longest reach',
-    tradeoff: 'Tall and heavy: the slowest robot',
+    blurb: 'Stacked slides that reach the CELL from far back.',
+    strength: 'Loads from 36 in., the longest reach',
+    tradeoff: '20% slower top speed, Handling -3',
     traits: { speed: -4, handling: -3, control: -2, collect: 0, score: 3 },
     weight: 5,
     power: 4,
@@ -334,8 +335,8 @@ const modules: Module[] = [
     category: 'score',
     name: 'Burst Feeder',
     code: 'SCR-01',
-    blurb: 'Fires ARTIFACTS into the CELL back to back.',
-    strength: 'Fills the CELL fastest',
+    blurb: 'A feeder that loads ARTIFACTS back to back.',
+    strength: 'One every 0.15 s, the fastest',
     tradeoff: 'Only fires with the robot stopped',
     traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 3 },
     weight: 2,
@@ -347,9 +348,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'TrueGate Indexer',
     code: 'SCR-02',
-    blurb: 'Drops exactly one ARTIFACT per press.',
-    strength: 'Loads on the move and never misses',
-    tradeoff: 'Slow between shots',
+    blurb: 'Loads exactly one ARTIFACT per press.',
+    strength: 'Fires on the move, never misses',
+    tradeoff: '0.45 s between loads',
     traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 1 },
     weight: 2,
     power: 2,
@@ -360,9 +361,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'TipTray',
     code: 'SCR-03',
-    blurb: 'Tips the whole load into the CELL at once.',
-    strength: 'Empties your storage in one motion',
-    tradeoff: 'Must stop, then a very long reload',
+    blurb: 'Tips everything in storage into the CELL at once.',
+    strength: 'Empties all storage in one load',
+    tradeoff: 'Must stop, then 1.1 s to reset',
     traits: { speed: 0, handling: 1, control: 0, collect: 0, score: 2 },
     weight: 2,
     power: 2,
@@ -373,8 +374,8 @@ const modules: Module[] = [
     category: 'score',
     name: 'Vector Flywheel',
     code: 'SCR-04',
-    blurb: 'Launches ARTIFACTS into the CELL without slowing down.',
-    strength: 'Quick shots on the move',
+    blurb: 'Launches ARTIFACTS into the CELL on the move.',
+    strength: 'One every 0.25 s, even while driving',
     tradeoff: 'One shot in four bounces out',
     traits: { speed: 1, handling: -2, control: -2, collect: 0, score: 2 },
     weight: 3,
@@ -387,8 +388,8 @@ const modules: Module[] = [
     name: 'Range Finder',
     code: 'SNS-02',
     blurb: 'Marks where you can load from, and lights up once you are there.',
-    strength: 'Never wastes a trip',
-    tradeoff: 'Only useful at the HIVE',
+    strength: 'Shows your exact loading area',
+    tradeoff: 'No route to ARTIFACTS or BASE',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 1,
     power: 1,
@@ -399,9 +400,9 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Auto Align',
     code: 'SNS-03',
-    blurb: 'Points the way to the upward CELL and widens your aim.',
-    strength: 'Guides every trip to the HIVE',
-    tradeoff: 'Costs real top speed',
+    blurb: 'Points the way to the upward CELL.',
+    strength: 'Collects and loads from 2.4 in. further',
+    tradeoff: '12% slower top speed',
     traits: { speed: -3, handling: 1, control: 3, collect: 0, score: 1 },
     weight: 1,
     power: 2,
@@ -413,15 +414,38 @@ const modules: Module[] = [
     name: 'Pathfinder',
     code: 'SNS-04',
     blurb: 'Draws the route to the next ARTIFACT, and home to BASE at the end.',
-    strength: 'Keeps your cycles short',
-    tradeoff: 'No help at the HIVE',
+    strength: 'Handling +3, and no speed cost',
+    tradeoff: 'No guide to the HIVE while carrying',
     traits: { speed: 1, handling: 3, control: 1, collect: 0, score: 0 },
     weight: 1,
     power: 2,
     space: 1,
   },
 ];
-const starter: Record<Category, string> = {
+// Robot inspection: the parts' weight, power and space must each stay within
+// this for the robot to be allowed onto the field.
+const INSPECTION_LIMIT = 22;
+
+function resourcesOf(loadout: Module[]) {
+  return {
+    weight: loadout.reduce((sum, module) => sum + module.weight, 0),
+    power: loadout.reduce((sum, module) => sum + module.power, 0),
+    space: loadout.reduce((sum, module) => sum + module.space, 0),
+  };
+}
+
+function passesInspection(resources: ReturnType<typeof resourcesOf>) {
+  return (
+    resources.weight <= INSPECTION_LIMIT &&
+    resources.power <= INSPECTION_LIMIT &&
+    resources.space <= INSPECTION_LIMIT
+  );
+}
+
+// What the page is first drawn with, before the browser takes over. The
+// server cannot roll the dice - its HTML is reused for every visitor - so
+// Atlas gets its random parts once the page is running (`randomLoadout`).
+const firstLoadout: Record<Category, string> = {
   drive: 'comet',
   collect: 'widewave',
   carry: 'pocket',
@@ -430,58 +454,28 @@ const starter: Record<Category, string> = {
   assist: 'align',
 };
 
-const blueprints: {
-  id: string;
-  name: string;
-  note: string;
-  loadout: Record<Category, string>;
-}[] = [
-  {
-    id: 'balanced',
-    name: 'Balanced Rookie',
-    note: 'Easy to drive and score',
-    loadout: starter,
-  },
-  {
-    id: 'speed',
-    name: 'Speed Collector',
-    note: 'Fast cycles, small margin',
-    loadout: {
-      drive: 'orbit',
-      collect: 'twinflex',
-      carry: 'pocket',
-      reach: 'swingarm',
-      score: 'burst',
-      assist: 'pathfinder',
-    },
-  },
-  {
-    id: 'precision',
-    name: 'Precision Scorer',
-    note: 'Slower, but very accurate',
-    loadout: {
-      drive: 'anchor',
-      collect: 'twinflex',
-      carry: 'pocket',
-      reach: 'elevator',
-      score: 'truegate',
-      assist: 'range',
-    },
-  },
-  {
-    id: 'hauler',
-    name: 'High-Capacity Hauler',
-    note: 'Carries more per trip',
-    loadout: {
-      drive: 'trailblazer',
-      collect: 'widewave',
-      carry: 'stackpack',
-      reach: 'cascade',
-      score: 'tiptray',
-      assist: 'pathfinder',
-    },
-  },
-];
+// A random part for every mount, re-rolled until the robot passes inspection.
+function randomLoadout(): Record<Category, string> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const picks = categories.map(({ id }) => {
+      const options = modules.filter((module) => module.category === id);
+      return options[Math.floor(Math.random() * options.length)];
+    });
+    if (passesInspection(resourcesOf(picks)))
+      return Object.fromEntries(
+        picks.map((module) => [module.category, module.id]),
+      ) as Record<Category, string>;
+  }
+  return firstLoadout;
+}
+
+// This visit's random parts: rolled once, the first time the browser asks,
+// and the same every time after. Nothing ever changes it, so there is nothing
+// to subscribe to.
+let launchLoadout: Record<Category, string> | undefined;
+const rollLaunchLoadout = () => (launchLoadout ??= randomLoadout());
+const serverLoadout = () => firstLoadout;
+const noUpdates = () => () => {};
 
 const traitLabels: { id: Trait; label: string; hint: string }[] = [
   { id: 'speed', label: 'Speed', hint: 'How fast the robot can go' },
@@ -544,8 +538,7 @@ function HowItWorks() {
           </div>
         </div>
         <p className="unofficial-note">
-          Unofficial educational prototype for FTC team outreach. FIRST® and
-          FIRST Tech Challenge® are trademarks of For Inspiration and
+          FIRST® and FIRST Tech Challenge® are trademarks of For Inspiration and
           Recognition of Science and Technology (FIRST).
         </p>
       </DialogContent>
@@ -583,10 +576,18 @@ function Briefing({
     {
       id: 'rookie',
       name: 'Rookie',
-      note: 'Takes wide turns and pauses to think',
+      note: '2.6 ft/s, weaves as it drives, holds 2 slots',
     },
-    { id: 'rival', name: 'Rival', note: 'A fair match with a solid strategy' },
-    { id: 'ace', name: 'Ace', note: 'Fast routes and very few mistakes' },
+    {
+      id: 'rival',
+      name: 'Rival',
+      note: '3.2 ft/s, steadier steering, holds 3 slots',
+    },
+    {
+      id: 'ace',
+      name: 'Ace',
+      note: '3.75 ft/s, drives straight, holds 3 slots',
+    },
   ];
 
   return (
@@ -727,7 +728,7 @@ function Results({
           </div>
           <div>
             <p className="brand-name">FIELDLAB</p>
-            <p className="brand-kicker">AN FTC TEAM OUTREACH PROJECT</p>
+            <p className="brand-kicker">ARTIFACT RUSH</p>
           </div>
         </div>
         <div className="header-status">
@@ -800,16 +801,14 @@ function Results({
               <div>
                 <span>WORKED</span>
                 <p>
-                  <strong>{collector.name}</strong> gave you{' '}
-                  {collector.strength.toLowerCase()}.
+                  <strong>{collector.name}</strong>: {collector.strength}.
                 </p>
               </div>
               <div>
                 <span>TRY NEXT</span>
                 <p>
-                  Your <strong>{carrier.name}</strong>{' '}
-                  {carrier.tradeoff.toLowerCase()}. Test another Carry module
-                  and compare.
+                  <strong>{carrier.name}</strong>: {carrier.tradeoff}. Test
+                  another Carry module and compare.
                 </p>
               </div>
             </div>
@@ -835,11 +834,22 @@ function Results({
 
 export function FieldLab() {
   const [category, setCategory] = useState<Category>('drive');
-  const [selected, setSelected] = useState<Record<Category, string>>(starter);
-  const [snapNote, setSnapNote] = useState(
-    'Balanced Rookie is on the bench. Pick up any part to start.',
+  // The server draws `firstLoadout`; as soon as the browser takes over, Atlas
+  // is swapped onto this visit's random parts.
+  const launch = useSyncExternalStore(
+    noUpdates,
+    rollLaunchLoadout,
+    serverLoadout,
   );
-  const [blueprint, setBlueprint] = useState('balanced');
+  const [selected, setSelected] = useState<Record<Category, string>>(launch);
+  const [launchSeen, setLaunchSeen] = useState(launch);
+  if (launch !== launchSeen) {
+    setLaunchSeen(launch);
+    setSelected(launch);
+  }
+  const [snapNote, setSnapNote] = useState(
+    'Atlas is on the bench with random parts. Swap any part you want.',
+  );
   const [dragging, setDragging] = useState<Module | null>(null);
   // Where the dragged part first appears. After that the ghost is moved
   // straight in the DOM, so a drag never re-renders the whole workshop on
@@ -974,18 +984,13 @@ export function FieldLab() {
     [selectedModules],
   );
   const resources = useMemo(
-    () => ({
-      weight: selectedModules.reduce((sum, module) => sum + module.weight, 0),
-      power: selectedModules.reduce((sum, module) => sum + module.power, 0),
-      space: selectedModules.reduce((sum, module) => sum + module.space, 0),
-    }),
+    () => resourcesOf(selectedModules),
     [selectedModules],
   );
 
   const chooseModule = (module: Module, mode: 'drag' | 'tap' = 'tap') => {
     clearRejected();
     setSelected((current) => ({ ...current, [module.category]: module.id }));
-    setBlueprint('custom');
     setCategory(module.category);
     setSnappingCategory(module.category);
     setSnapNote(
@@ -1090,14 +1095,6 @@ export function FieldLab() {
     );
   };
 
-  const loadBlueprint = (id: string) => {
-    const next = blueprints.find((item) => item.id === id);
-    if (!next) return;
-    setSelected(next.loadout);
-    setBlueprint(id);
-    setSnapNote(`${next.name} is on the bench. Swap any subsystem you want.`);
-  };
-
   useEffect(() => {
     const context = (
       document as Document & {
@@ -1162,7 +1159,6 @@ export function FieldLab() {
             selectedRef.current = next;
             setSelected(next);
             setCategory(value.category);
-            setBlueprint('custom');
             setSnapNote(`${selectedModule.name} snapped into place`);
             setPhase('workshop');
             return {
@@ -1265,7 +1261,7 @@ export function FieldLab() {
   return (
     <main className="pit-app">
       <header className="pit-header">
-        <div className="pit-brand" aria-label="FieldLab FTC outreach workshop">
+        <div className="pit-brand" aria-label="FieldLab workshop">
           <span className="pit-brand-mark" aria-hidden="true">
             <i />
             <i />
@@ -1274,7 +1270,7 @@ export function FieldLab() {
           <span className="pit-wordmark">
             <strong>FIELD</strong>
             <b>/</b>LAB
-            <small>FIRST Tech Challenge outreach</small>
+            <small>Build. Test. Compete.</small>
           </span>
         </div>
         <div className="pit-progress" aria-label="Garage Cup progress">
@@ -1302,22 +1298,6 @@ export function FieldLab() {
             test.
           </p>
         </div>
-        <label className="starter-picker">
-          <span>Start from a team blueprint</span>
-          <select
-            value={blueprint}
-            onChange={(event) => loadBlueprint(event.target.value)}
-          >
-            {blueprint === 'custom' && (
-              <option value="custom">Custom build</option>
-            )}
-            {blueprints.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} — {item.note}
-              </option>
-            ))}
-          </select>
-        </label>
       </section>
 
       <div className="pit-workspace">
@@ -1529,19 +1509,28 @@ export function FieldLab() {
             <div>
               <Scale aria-hidden="true" />
               <span>
-                Weight<strong>{resources.weight} / 22</strong>
+                Weight
+                <strong>
+                  {resources.weight} / {INSPECTION_LIMIT}
+                </strong>
               </span>
             </div>
             <div>
               <BatteryCharging aria-hidden="true" />
               <span>
-                Power<strong>{resources.power} / 22</strong>
+                Power
+                <strong>
+                  {resources.power} / {INSPECTION_LIMIT}
+                </strong>
               </span>
             </div>
             <div>
               <Box aria-hidden="true" />
               <span>
-                Space<strong>{resources.space} / 22</strong>
+                Space
+                <strong>
+                  {resources.space} / {INSPECTION_LIMIT}
+                </strong>
               </span>
             </div>
           </div>
@@ -1550,11 +1539,7 @@ export function FieldLab() {
             className="field-button"
             size="lg"
             onClick={() => setPhase('briefing')}
-            disabled={
-              resources.power > 22 ||
-              resources.weight > 22 ||
-              resources.space > 22
-            }
+            disabled={!passesInspection(resources)}
           >
             <span>
               <strong>Take Atlas to the field</strong>
@@ -1595,10 +1580,6 @@ export function FieldLab() {
           <i />
           <span>Improve</span>
         </div>
-        <p>
-          Unofficial educational experience made for FIRST Tech Challenge team
-          outreach.
-        </p>
       </footer>
     </main>
   );

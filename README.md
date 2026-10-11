@@ -1,6 +1,6 @@
 # FieldLab
 
-A browser-based FTC outreach game: assemble a modular 3D robot, then drive it against a bot in Artifact Rush. Designed for elementary and middle school players. This is an unofficial FIRST-inspired educational prototype, not an official competition simulator.
+A browser-based robotics game: assemble a modular 3D robot, then drive it against a bot in Artifact Rush. Designed for elementary and middle school players. It is inspired by FIRST Tech Challenge but is not an official FIRST product or competition simulator.
 
 ## Local development
 
@@ -31,6 +31,7 @@ The match follows BIOBUZZ (FTC 2026-27, competition manual sections 9 and 10) wi
 - In the middle stands the HIVE structure: two A-frames and a crossbar with the BIOBUZZ banner, carrying a blue HIVE and a red HIVE. Each HIVE is a seesaw with a five-sided CELL at either end, and one CELL always faces up. Both start with the near CELL up, holding three of their alliance's NECTAR.
 - ARTIFACTS score nothing on their own. A robot loads its HIVE's upward CELL from in front of its open end (`inLoadingRange`); big NECTAR counts 1.5 and small yellow POLLEN 1. At 10 the HIVE tips for 20 points: the full CELL swings down and pours everything out on its own side of the field, where it must be visible again, and the empty CELL at the other end swings up - so the next load goes in from the other side.
 - Robots and ARTIFACTS can pass under the HIVES between the A-frames; only the A-frames' base bars are solid. In follow view, the HIVES fade see-through while they stand between the camera and the robot.
+- Everything is to true scale against everything else (`INCH` in `app/field.ts`): the 144 in. field of 24 in. mats with foot-tall walls, 18 in. robots, 2.8 in. POLLEN and 3.6 in. NECTAR, and the HIVE at the manual's dimensions. The hall around the field, the spectators in the bleachers, and the workshop bench, tools and pegboard are built to the same scale. Collector and lift reach are measured from the front of the 18 in. robot, and a robot loads a CELL from in front of its opening, never from underneath it.
 - NECTAR fills two storage slots in every module except the Low Rider Hopper. As in BIOBUZZ, NECTAR comes in red and blue and each robot may only pick up its own alliance's; POLLEN is anyone's.
 
 ### Graphics quality and performance

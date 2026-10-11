@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOT_OBSTACLES, botHeading, createBotMind } from '../app/bot-driver.ts';
 import { moveBody, resolveObstacle } from '../app/robot-physics.ts';
-import { inLoadingRange } from '../app/match-guidance.ts';
+import { BOT_LOAD_REACH, inLoadingRange } from '../app/match-guidance.ts';
 import {
   barContact,
   FIELD_CENTER,
@@ -122,11 +122,11 @@ test('Scout-7 reaches either CELL of its HIVE from anywhere and can load it', ()
       let loading = 0;
       for (let t = 0; t < 10; t += STEP) {
         stepToward(bot, target, mind);
-        if (inLoadingRange(bot, 'red', end, 95)) loading += STEP;
+        if (inLoadingRange(bot, 'red', end, BOT_LOAD_REACH)) loading += STEP;
       }
       // Into loading range within a few seconds, and still there at the end.
       assert.ok(
-        inLoadingRange(bot, 'red', end, 95),
+        inLoadingRange(bot, 'red', end, BOT_LOAD_REACH),
         `from ${start.x},${start.y} to the ${end > 0 ? 'near' : 'far'} CELL it ended at ${bot.x.toFixed(0)},${bot.y.toFixed(0)}`,
       );
       assert.ok(

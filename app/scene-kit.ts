@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { blockWall, concreteFloor, pegboard, workMat } from './textures';
+import { ROBOT_MODEL_WIDTH } from './robot-model';
 
 // A rounded block. Anything asked to be fairly metallic is finished as
 // brushed aluminum; everything else as satin paint or plastic.
@@ -188,76 +189,94 @@ function surface(
   return mesh;
 }
 
-// A team's pit: concrete floor, a painted block wall with a pegboard of
-// hand tools, and the robot on a steel bench topped with an anti-static mat.
+// A team's pit, at true scale to the robot on the bench: a concrete floor, a
+// painted block wall with a pegboard of hand tools, rolling tool chests, and
+// the robot on a 36 in. steel bench topped with an anti-static mat. The robot
+// model is ROBOT_MODEL_WIDTH units across for its 18 in., so IN is one inch.
+const IN = ROBOT_MODEL_WIDTH / 18;
+
 export function workshopRoom(scene: THREE.Object3D) {
-  const concrete = concreteFloor(48 / 8);
-  concrete.map.repeat.set(6, 5);
-  concrete.roughnessMap.repeat.set(6, 5);
+  // The bench top is at 0, where the robot sits; the floor is a bench height
+  // below it.
+  const floorY = -36 * IN;
+  const concrete = concreteFloor(80 / 8);
+  concrete.map.repeat.set(10, 9);
+  concrete.roughnessMap.repeat.set(10, 9);
   place(
     scene,
-    surface(48, 0.3, 40, {
+    surface(80, 0.3, 70, {
       color: 0xc3c9cb,
       map: concrete.map,
       roughnessMap: concrete.roughnessMap,
       roughness: 0.75,
     }),
     0,
-    -2.5,
+    floorY - 0.15,
     0,
   );
-  const blocks = blockWall(36 / 3.2, 14 / 1.6);
+  // A ten-foot block wall behind the bench.
+  const wallHeight = 120 * IN;
+  const wallWide = 60;
+  const blocks = blockWall(wallWide / (16 * IN), wallHeight / (8 * IN));
   place(
     scene,
-    surface(36, 14, 0.3, {
+    surface(wallWide, wallHeight, 0.3, {
       map: blocks.map,
       bumpMap: blocks.bumpMap,
       bumpScale: 1.2,
       roughness: 0.88,
     }),
     0,
-    3.3,
+    floorY + wallHeight / 2,
     -11,
   );
-  // Pegboard with a few hand tools, between the drawer cabinet and the wall
-  // signs so the view behind the robot stays calm.
-  const boardX = -7.8;
-  const board = pegboard(3.4 / 0.8, 2.8 / 0.8);
+  // A 36 x 24 in. pegboard of hand tools, at working height to the left of
+  // the wall signs so the view behind the robot stays calm.
+  const boardX = -12.4;
+  const boardY = 6 * IN + 12 * IN;
+  const board = pegboard((36 * IN) / 0.8, (24 * IN) / 0.8);
   place(
     scene,
-    surface(3.4, 2.8, 0.06, {
+    surface(36 * IN, 24 * IN, 0.06, {
       map: board.map,
       bumpMap: board.bumpMap,
       bumpScale: 1,
       roughness: 0.8,
     }),
     boardX,
-    2.1,
+    boardY,
     -10.8,
   );
-  // Screwdrivers: a steel shaft with a coloured handle.
+  // Screwdrivers, 8 in. long: a steel shaft with a coloured handle.
   for (const [i, color] of [0xd9502d, 0xe2ae35, 0x2f6f96].entries()) {
-    const x = boardX - 1.2 + i * 0.42;
-    place(scene, solid(0.1, 0.8, 0.05, 0xb9c4c9, 0.8), x, 2.75, -10.7);
-    place(scene, solid(0.2, 0.42, 0.1, color), x, 2.2, -10.7);
-  }
-  // Open-end wrenches, largest first.
-  for (const [i, length] of [1.1, 0.9, 0.72].entries())
+    const x = boardX - 4 + i * 1.3;
     place(
       scene,
-      solid(0.13, length, 0.05, 0xc3ccd1, 0.8),
-      boardX + 0.3 + i * 0.4,
-      2.65,
+      solid(0.1, 4.5 * IN, 0.06, 0xb9c4c9, 0.8),
+      x,
+      boardY + 2.4,
+      -10.7,
+    );
+    place(scene, solid(0.35, 3.5 * IN, 0.3, color), x, boardY + 0.5, -10.7);
+  }
+  // Open-end wrenches, 12, 10 and 8 in.
+  for (const [i, inches] of [12, 10, 8].entries())
+    place(
+      scene,
+      solid(0.32, inches * IN, 0.08, 0xc3ccd1, 0.8),
+      boardX + 0.6 + i * 1.1,
+      boardY + 1,
       -10.7,
     );
   // A coil of spare wire on a hook.
   const coil = new THREE.Mesh(
-    new THREE.TorusGeometry(0.3, 0.06, 10, 32),
+    new THREE.TorusGeometry(3 * IN, 0.4 * IN, 10, 32),
     new THREE.MeshStandardMaterial({ color: 0xd9503d, roughness: 0.5 }),
   );
-  place(scene, coil, boardX + 0.7, 1.35, -10.65);
+  place(scene, coil, boardX + 4.4, boardY - 1.6, -10.65);
 
-  // The robot sits on a real raised service table, with a cutaway front.
+  // The robot sits on a real steel service bench: a top with an anti-static
+  // mat, four legs to the floor and a shelf low down.
   place(scene, solid(12, 0.35, 10, 0x364852, 0.8), 0, -0.25, 0);
   const mat = workMat();
   place(
@@ -267,15 +286,21 @@ export function workshopRoom(scene: THREE.Object3D) {
     -0.045,
     0,
   );
-  for (const x of [-5.2, 5.2])
-    for (const z of [-4.3, 4.3]) {
-      place(scene, solid(0.3, 2.2, 0.3, 0x0e1d27, 0.5), x, -1.5, z);
-    }
+  const legLength = -0.42 - floorY;
+  for (const x of [-5.4, 5.4])
+    for (const z of [-4.5, 4.5])
+      place(
+        scene,
+        solid(2 * IN, legLength, 2 * IN, 0x0e1d27, 0.5),
+        x,
+        floorY + legLength / 2,
+        z,
+      );
+  place(scene, solid(11.4, 0.2, 9.4, 0x2b3a44, 0.6), 0, floorY + 6 * IN, 0);
   for (const x of [-5.9, 5.9])
     place(scene, solid(0.06, 0.04, 9.4, 0xe2ae35), x, 0, 0);
-  // Wall signs, sized to read from the workbench camera. Stacked above the
-  // pegboard so none of them overlap it.
-  // Centred on the back wall.
+  // Wall signs, sized to read from the workbench camera, above the bench
+  // and centred on the back wall.
   const signX = 0;
   place(scene, label('FIELD / LAB', 8.5, 1.6), signX, 6.1, -10.8);
   place(
@@ -298,17 +323,43 @@ export function workshopRoom(scene: THREE.Object3D) {
     3.95,
     -10.78,
   );
-  for (const x of [-12, 10]) {
-    place(scene, solid(4, 4.2, 1.3, 0x253e4b, 0.5), x, 0, -8.4);
-    for (let y = -1; y < 1.9; y += 0.65) {
-      place(scene, solid(3.6, 0.52, 0.08, 0x38515c, 0.5), x, y, -7.7);
-      place(scene, solid(1.6, 0.06, 0.12, 0xb6c3c7, 0.8), x, y + 0.08, -7.59);
+  // Rolling tool chests, 26 in. wide and as tall as the bench, back to the
+  // wall either side of it.
+  const chestHigh = 36 * IN;
+  const chestDeep = 18 * IN;
+  for (const x of [-16.5, 13.5]) {
+    const z = -11 + 0.15 + chestDeep / 2;
+    place(
+      scene,
+      solid(26 * IN, chestHigh, chestDeep, 0x253e4b, 0.5),
+      x,
+      floorY + chestHigh / 2,
+      z,
+    );
+    for (let drawer = 0; drawer < 6; drawer++) {
+      const y = floorY + 3 * IN + drawer * 5.4 * IN + 2.4 * IN;
+      place(
+        scene,
+        solid(24 * IN, 4.6 * IN, 0.08, 0x38515c, 0.5),
+        x,
+        y,
+        z + chestDeep / 2 + 0.03,
+      );
+      place(
+        scene,
+        solid(10 * IN, 0.5 * IN, 0.12, 0xb6c3c7, 0.8),
+        x,
+        y + 1.2 * IN,
+        z + chestDeep / 2 + 0.1,
+      );
     }
   }
-  for (const x of [-10, -2, 6]) {
-    place(scene, solid(5.2, 0.12, 0.28, 0xd6e7ee), x, 8, -6);
+  // Strip lights hung from the ceiling, nine feet up.
+  for (const x of [-14, -2, 10]) {
+    const y = floorY + 108 * IN;
+    place(scene, solid(48 * IN, 0.12, 0.28, 0xd6e7ee), x, y, -6);
     const lamp = new THREE.Mesh(
-      new THREE.PlaneGeometry(5, 0.2),
+      new THREE.PlaneGeometry(47 * IN, 0.2),
       new THREE.MeshBasicMaterial({
         color: 0xecf8ff,
         toneMapped: false,
@@ -316,7 +367,7 @@ export function workshopRoom(scene: THREE.Object3D) {
       }),
     );
     lamp.rotation.x = Math.PI / 2;
-    place(scene, lamp, x, 7.92, -6);
+    place(scene, lamp, x, y - 0.08, -6);
   }
   // Spare hardware and a tool tray give the workbench a readable scale.
   place(scene, solid(1.5, 0.15, 2.2, 0x152029), -4.7, 0.08, -2.9);

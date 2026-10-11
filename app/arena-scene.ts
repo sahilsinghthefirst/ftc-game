@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { createRobotModel, disposeObject, STORAGE_INSIDE } from './robot-model';
+import {
+  createRobotModel,
+  disposeObject,
+  ROBOT_MODEL_WIDTH,
+  STORAGE_INSIDE,
+} from './robot-model';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { insetOutline, tileEdges, tileOutline } from './field-tiles';
 import { mergeStaticMeshes } from './merge-static';
@@ -15,11 +20,14 @@ import {
   FIELD_SIZE,
   FRAME_HALF_WIDTH,
   HIVE_X,
+  INCH,
   LOAD_FRONT,
+  loadingSpot,
   NECTAR_SCALE,
   POLLEN_RADIUS,
   RED_BASE_ZONE,
-  ROBOT_RADIUS,
+  ROBOT_WIDTH,
+  SPILL_MOUTH,
   TILE,
   TILES,
   zoneCenter,
@@ -28,8 +36,6 @@ import {
 } from './field';
 import type { World } from './game-arena';
 import {
-  CELL_BALL_SCALE,
-  cellSlot,
   createHive,
   HIVE_TILT,
   hiveFrame,
@@ -43,6 +49,13 @@ import {
   scoreReach,
 } from './match-guidance';
 import { fallTime } from './robot-physics';
+import {
+  enteringBall,
+  GRAVITY,
+  restingBall,
+  stepCell,
+  type CellBall,
+} from './cell-physics';
 
 export type CameraMode = 'arena' | 'follow';
 const SCALE = 0.02;
@@ -60,17 +73,28 @@ const position = (x: number, z: number, y = 0.08) =>
 const toScene = (target: THREE.Vector3, x: number, z: number, y = 0.08) =>
   target.set((x - FIELD_CENTER) * SCALE, y, (z - FIELD_CENTER) * SCALE);
 
-// How big the robots are drawn. The model fit a body of radius 28 at 0.235,
-// so it scales with the physics body (ROBOT_RADIUS) and what you see is what
-// bumps.
-const ROBOT_MODEL_SCALE = 0.235 * (ROBOT_RADIUS / 28);
+// How big the robots are drawn: ROBOT_WIDTH (18 in.) wheel to wheel, the
+// same true scale as the field, the balls and the HIVE.
+const ROBOT_MODEL_SCALE = (ROBOT_WIDTH * SCALE) / ROBOT_MODEL_WIDTH;
 
 // Where the follow camera sits relative to the robot, and where it looks.
-// It looks well ahead of the robot, so that from in front of the HIVE the
-// upward CELL is still in view below the scoreboard.
-const FOLLOW_HEIGHT = 7.4;
-const FOLLOW_BACK = 9.6;
-const FOLLOW_AHEAD = 5;
+// Driving round the field it looks down at the robot from fairly close and
+// high. The real HIVE stands over five feet tall, though, with its upward
+// CELL's opening tipped up at the robot, so near the robot's own HIVE the
+// camera climbs higher still: it looks down into that opening and watches
+// the ARTIFACTS roll in, with the robot below.
+type FollowView = { height: number; back: number; ahead: number; look: number };
+const FOLLOW: FollowView = { height: 15, back: 12, ahead: 2, look: 0.5 };
+const FOLLOW_AT_HIVE: FollowView = {
+  height: 21,
+  back: 10,
+  ahead: 3,
+  look: 3.5,
+};
+// Field units from the loading spot: fully framing the HIVE inside the first,
+// back to the usual view past the second.
+const HIVE_VIEW_NEAR = 250;
+const HIVE_VIEW_FAR = 600;
 
 // Clear polycarbonate perimeter panels: close to invisible head-on, but they
 // pick up the hall's light strips as sharp reflections, the way real field
@@ -446,18 +470,15 @@ function quietFarShadows(venue: THREE.Object3D) {
 // Width of the alliance-colored tape round each BASE, in scene units.
 const BASE_BORDER = 0.32;
 
-// The hall around the field was laid out for a field 8.1 units from center to
-// wall. Everything beside the field moves out by however much further the
-// wall now is, so the benches and trusses always clear it.
-const HALL_LAYOUT_HALF = 8.1;
-
 function arenaRoom(scene: THREE.Object3D) {
   const half = (FIELD_SIZE * SCALE) / 2;
-  const grow = half - HALL_LAYOUT_HALF;
   const rail = half * 2 + 0.3;
+  // The hall is built to the same true scale as the field: FT scene units to
+  // the foot.
+  const FT = 12 * IN;
   // Polished concrete hall floor, in slabs about the size of four mats.
-  const hallWide = 70 + grow * 4;
-  const hallDeep = 60 + grow * 4;
+  const hallWide = 150 * FT;
+  const hallDeep = 130 * FT;
   const concrete = concreteFloor(1);
   concrete.map.repeat.set(hallWide / 8, hallDeep / 8);
   concrete.roughnessMap.repeat.copy(concrete.map.repeat);
@@ -473,9 +494,9 @@ function arenaRoom(scene: THREE.Object3D) {
   );
   floor.receiveShadow = true;
   place(scene, floor, 0, -0.45, 0);
-  // A band of dark event carpet round the field, as at a real venue, so the
-  // field reads as the stage and the hall floor as the room.
-  const carpetSize = rail + 7;
+  // A band of dark event carpet ten feet wide round the field, as at a real
+  // venue, so the field reads as the stage and the hall floor as the room.
+  const carpetSize = rail + 20 * FT;
   const carpet = eventCarpet(carpetSize / 3);
   const rug = new THREE.Mesh(
     new THREE.PlaneGeometry(carpetSize, carpetSize),
@@ -492,27 +513,55 @@ function arenaRoom(scene: THREE.Object3D) {
   place(scene, rug, 0, -0.295, 0);
   place(scene, solid(rail + 0.8, 0.22, rail + 0.8, 0x0f1c24, 0.6), 0, -0.12, 0);
   foamFloor(scene);
+  // The perimeter: a foot-tall wall of clear polycarbonate panels between
+  // aluminum posts at every mat seam, a kick plate along the bottom and a
+  // rail along the top, as on a real FTC field.
+  const wallHeight = 12 * IN;
   for (const x of [-half - 0.1, half + 0.1]) {
-    place(scene, solid(0.12, 0.1, rail, 0xb7c5cd, 0.8), x, 0.67, 0);
+    place(
+      scene,
+      solid(0.12, 0.1, rail, 0xb7c5cd, 0.8),
+      x,
+      wallHeight + 0.07,
+      0,
+    );
     place(scene, solid(0.15, 0.2, rail, 0x293d49, 0.6), x, 0.13, 0);
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.6, rail - 0.1),
+      new THREE.BoxGeometry(0.04, wallHeight - 0.1, rail - 0.1),
       polycarbonate(),
     );
-    place(scene, wall, x, 0.36, 0);
+    place(scene, wall, x, wallHeight / 2 + 0.06, 0);
     for (let z = -half; z <= half; z += TILE * SCALE)
-      place(scene, solid(0.13, 0.72, 0.13, 0x7e949f, 0.8), x, 0.36, z);
+      place(
+        scene,
+        solid(0.13, wallHeight + 0.12, 0.13, 0x7e949f, 0.8),
+        x,
+        (wallHeight + 0.12) / 2,
+        z,
+      );
   }
   for (const z of [-half - 0.1, half + 0.1]) {
-    place(scene, solid(rail, 0.1, 0.12, 0xc3cfd4, 0.8), 0, 0.66, z);
+    place(
+      scene,
+      solid(rail, 0.1, 0.12, 0xc3cfd4, 0.8),
+      0,
+      wallHeight + 0.06,
+      z,
+    );
     place(scene, solid(rail, 0.17, 0.16, 0x243844, 0.5), 0, 0.13, z);
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(rail - 0.1, 0.55, 0.04),
+      new THREE.BoxGeometry(rail - 0.1, wallHeight - 0.15, 0.04),
       polycarbonate(),
     );
-    place(scene, wall, 0, 0.37, z);
+    place(scene, wall, 0, wallHeight / 2 + 0.07, z);
     for (let x = -half; x <= half; x += TILE * SCALE)
-      place(scene, solid(0.12, 0.7, 0.14, 0x7e949f, 0.8), x, 0.35, z);
+      place(
+        scene,
+        solid(0.12, wallHeight + 0.1, 0.14, 0x7e949f, 0.8),
+        x,
+        (wallHeight + 0.1) / 2,
+        z,
+      );
   }
   // Each BASE fills its corner mat exactly, so what players see is the area
   // that counts: alliance-colored tape round the edge, dark inside.
@@ -546,12 +595,22 @@ function arenaRoom(scene: THREE.Object3D) {
   const midline = Math.floor(half * 0.62);
   for (let z = -midline; z <= midline; z += 1)
     place(scene, solid(0.045, 0.008, 0.43, 0xd6bc74), 0, MAT_TOP, z);
-  // Open competition hall: a painted block wall carrying the event banners,
-  // aluminum bleachers down both sides, and a lighting truss overhead.
-  const wallWide = 52 + grow * 2;
-  const blocks = blockWall(wallWide / 3.2, 14 / 1.6);
+  // Open competition hall, to the same true scale as the field: bleachers
+  // ten feet back from it down both sides and behind its far end, seated
+  // spectators, a block wall carrying the event banners, and a lighting
+  // truss overhead.
+  const rows = 4;
+  const rowDepth = 2.5 * FT;
+  const rise = 1.25 * FT;
+  const benchHeight = 1.4 * FT;
+  const seatPitch = 2 * FT;
+  const standGap = 10 * FT;
+  const standDepth = rows * rowDepth;
+  const hallHeight = 30 * FT;
+  const backWallZ = -(half + standGap + standDepth + 8 * FT);
+  const blocks = blockWall(hallWide / (16 * IN), hallHeight / (8 * IN));
   const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(wallWide, 14, 0.3),
+    new THREE.BoxGeometry(hallWide, hallHeight, 0.3),
     new THREE.MeshStandardMaterial({
       map: blocks.map,
       bumpMap: blocks.bumpMap,
@@ -561,124 +620,146 @@ function arenaRoom(scene: THREE.Object3D) {
     }),
   );
   backWall.receiveShadow = true;
-  place(scene, backWall, 0, 4, -17 - grow);
-  place(scene, label('FIELD / LAB', 13, 2, '#1b2e3b'), 0, 5.7, -16.8 - grow);
+  place(scene, backWall, 0, hallHeight / 2 - 0.3, backWallZ);
+  place(
+    scene,
+    label('FIELD / LAB', 30 * FT, 5 * FT, '#1b2e3b'),
+    0,
+    19 * FT,
+    backWallZ + 0.2,
+  );
   place(
     scene,
     label(
-      'GARAGE CUP  /  FIRST TECH CHALLENGE OUTREACH',
-      15,
-      0.62,
+      'GARAGE CUP  /  ARTIFACT RUSH',
+      40 * FT,
+      1.7 * FT,
       '#1b2e3b',
       '#a7bfce',
     ),
     0,
-    3.9,
-    -16.75 - grow,
+    15 * FT,
+    backWallZ + 0.25,
   );
-  const benchLength = 18 + grow * 2;
-  const plank = ribbedPlank(benchLength / 1.2);
   const plankMaterial = new THREE.MeshStandardMaterial({
     color: 0xb4bec4,
     metalness: 0.85,
     roughness: 0.38,
-    bumpMap: plank.bumpMap,
+    bumpMap: ribbedPlank(40).bumpMap,
     bumpScale: 0.5,
   });
-  // Three stands of three tiers: one down each side and one behind the far
+  // Three stands of four rows: one down each side and one behind the far
   // end of the field, where both cameras can see it. Every seat is an
   // instance of one mesh, and so is every spectator, so the whole crowd
   // costs three draws.
   type Seat = { x: number; y: number; z: number; color: number };
   const seatSpots: Seat[] = [];
-  const rows = 3;
   const tier = (
     along: 'x' | 'z',
-    // Seat line of the front row, and which way the stand climbs.
+    // Front edge of the stand, which way it climbs, and where it is centred.
     front: number,
     outward: number,
     center: number,
     length: number,
     seatColor: number,
   ) => {
-    for (let row = 0; row < rows; row++) {
-      const line = front + outward * row * 1.6;
-      const riser = solid(
-        along === 'z' ? 5.5 : length,
-        0.35,
-        along === 'z' ? length : 5.5,
-        0x2c3a44,
+    const put = (object: THREE.Object3D, across: number, y: number) =>
+      along === 'z'
+        ? place(scene, object, across, y, center)
+        : place(scene, object, center, y, across);
+    const block = (depth: number, height: number, color: number) =>
+      solid(
+        along === 'z' ? depth : length,
+        height,
+        along === 'z' ? length : depth,
+        color,
       );
-      const riserLine = line + outward * 1.6;
-      if (along === 'z')
-        place(scene, riser, riserLine, row * 0.55 - 0.1, center);
-      else place(scene, riser, center, row * 0.55 - 0.1, riserLine);
+    for (let row = 0; row < rows; row++) {
+      const tread = (row + 1) * rise;
+      const line = front + outward * (row + 0.5) * rowDepth;
+      // The riser block under this row, from the floor up to its tread.
+      put(block(rowDepth, tread + 0.3, 0x2c3a44), line, (tread - 0.3) / 2);
+      // A bench toward the back of the tread, topped with an aluminum plank.
+      const benchLine = line + outward * 0.22 * rowDepth;
+      put(
+        block(1.1 * FT, benchHeight, 0x3a4a55),
+        benchLine,
+        tread + benchHeight / 2,
+      );
       const deck = new THREE.Mesh(
         new THREE.BoxGeometry(
-          along === 'z' ? 1.5 : length,
-          0.04,
-          along === 'z' ? length : 1.5,
+          along === 'z' ? 1.2 * FT : length,
+          0.12,
+          along === 'z' ? length : 1.2 * FT,
         ),
         plankMaterial,
       );
       deck.receiveShadow = true;
-      if (along === 'z') place(scene, deck, line, row * 0.55 + 0.09, center);
-      else place(scene, deck, center, row * 0.55 + 0.09, line);
-      const count = Math.floor((length - 2) / 1.15);
+      put(deck, benchLine, tread + benchHeight + 0.06);
+      const count = Math.floor((length - 2 * FT) / seatPitch);
       for (let i = 0; i < count; i++) {
-        const offset = center - ((count - 1) * 1.15) / 2 + i * 1.15;
+        const offset = center - ((count - 1) * seatPitch) / 2 + i * seatPitch;
         seatSpots.push({
-          x: along === 'z' ? line : offset,
-          y: row * 0.55 + 0.19,
-          z: along === 'z' ? offset : line,
+          x: along === 'z' ? benchLine : offset,
+          y: tread + benchHeight + 0.12,
+          z: along === 'z' ? offset : benchLine,
           color: seatColor,
         });
       }
     }
-    // One handrail along the top tier keeps the stands readable.
-    const railLine = front + outward * ((rows - 1) * 1.6 + 0.9);
-    const rail = solid(
-      along === 'z' ? 0.07 : length,
-      0.07,
-      along === 'z' ? length : 0.07,
-      0xc3ccd1,
-      0.8,
+    // A waist-high handrail along the back of the top row.
+    const top = rows * rise;
+    const railLine = front + outward * (standDepth - 0.3);
+    const railHeight = 3.5 * FT;
+    put(
+      solid(
+        along === 'z' ? 0.12 : length,
+        0.12,
+        along === 'z' ? length : 0.12,
+        0xc3ccd1,
+        0.8,
+      ),
+      railLine,
+      top + railHeight,
     );
-    if (along === 'z') place(scene, rail, railLine, 2.05, center);
-    else place(scene, rail, center, 2.05, railLine);
-    for (let t = -length / 2 + 0.5; t < length / 2 - 0.4; t += 3.5) {
-      const post = solid(0.07, 0.95, 0.07, 0xc3ccd1, 0.8);
-      if (along === 'z') place(scene, post, railLine, 1.6, center + t);
-      else place(scene, post, center + t, 1.6, railLine);
+    for (let t = -length / 2 + FT; t < length / 2 - FT; t += 8 * FT) {
+      const post = solid(0.12, railHeight, 0.12, 0xc3ccd1, 0.8);
+      if (along === 'z')
+        place(scene, post, railLine, top + railHeight / 2, center + t);
+      else place(scene, post, center + t, top + railHeight / 2, railLine);
     }
   };
   for (const side of [-1, 1])
     tier(
       'z',
-      side * (14.4 + grow),
+      side * (half + standGap),
       side,
-      -1,
-      benchLength,
+      3 * FT,
+      36 * FT,
       side < 0 ? 0x2f6f96 : 0x8c3f42,
     );
-  tier('x', -(half + 4.2), -1, 0, half * 2 + 3, 0x59636b);
+  tier('x', -(half + standGap), -1, 0, 40 * FT, 0x59636b);
 
   const seats = new THREE.InstancedMesh(
-    new RoundedBoxGeometry(0.75, 0.16, 0.75, 1, 0.05),
+    new RoundedBoxGeometry(1.5 * FT, 0.2 * FT, 1.1 * FT, 1, 0.08),
     new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }),
     seatSpots.length,
   );
   const pose = new THREE.Matrix4();
   const tint = new THREE.Color();
   seatSpots.forEach((spot, i) => {
-    seats.setMatrixAt(i, pose.makeTranslation(spot.x, spot.y, spot.z));
+    seats.setMatrixAt(
+      i,
+      pose.makeTranslation(spot.x, spot.y + 0.1 * FT, spot.z),
+    );
     seats.setColorAt(i, tint.setHex(spot.color));
   });
   seats.receiveShadow = true;
   scene.add(seats);
 
-  // The crowd: a seated body and a head on about two seats in three. Shirts
-  // lean toward the alliance colour of the stand they sit in.
+  // The crowd: a seated person - torso and head, about three feet tall above
+  // the bench - on about two seats in three. Shirts lean toward the alliance
+  // colour of the stand they sit in.
   const pick = seeded(53);
   const shirts = [
     0x2f6f96, 0x8c3f42, 0xe2ae35, 0x3f7f55, 0xe7e9ea, 0x2a2f36, 0x7a5aa6,
@@ -686,32 +767,44 @@ function arenaRoom(scene: THREE.Object3D) {
   ];
   const skins = [0xf1c9a5, 0xe0ac7e, 0xc68642, 0x8d5524, 0x5c3a21, 0xffdbac];
   const crowd = seatSpots.filter(() => pick() < 0.66);
+  const torso = 0.62 * FT;
+  const torsoLength = 0.9 * FT;
   const bodies = new THREE.InstancedMesh(
-    new THREE.CapsuleGeometry(0.21, 0.36, 3, 8),
+    new THREE.CapsuleGeometry(torso, torsoLength, 3, 8),
     new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 }),
     crowd.length,
   );
   const heads = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.16, 10, 8),
+    new THREE.SphereGeometry(0.38 * FT, 10, 8),
     new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0 }),
     crowd.length,
   );
+  const seatTop = 0.2 * FT;
   crowd.forEach((spot, i) => {
-    const lean = (pick() - 0.5) * 0.12;
+    const lean = (pick() - 0.5) * 0.12 * FT;
     const alliance =
       spot.color === 0x2f6f96 || spot.color === 0x8c3f42 ? spot.color : null;
     const shirt =
       alliance !== null && pick() < 0.45
         ? alliance
         : shirts[Math.floor(pick() * shirts.length)];
+    const base = spot.y + seatTop;
     bodies.setMatrixAt(
       i,
-      pose.makeTranslation(spot.x + lean, spot.y + 0.47, spot.z),
+      pose.makeTranslation(
+        spot.x + lean,
+        base + torso + torsoLength / 2,
+        spot.z,
+      ),
     );
     bodies.setColorAt(i, tint.setHex(shirt));
     heads.setMatrixAt(
       i,
-      pose.makeTranslation(spot.x + lean * 1.4, spot.y + 0.98, spot.z),
+      pose.makeTranslation(
+        spot.x + lean * 1.4,
+        base + torso * 2 + torsoLength + 0.45 * FT,
+        spot.z,
+      ),
     );
     heads.setColorAt(i, tint.setHex(skins[Math.floor(pick() * skins.length)]));
   });
@@ -723,42 +816,55 @@ function arenaRoom(scene: THREE.Object3D) {
       scene,
       label(
         side < 0 ? 'BLUE ALLIANCE' : 'RED ALLIANCE',
-        7,
-        0.8,
+        16 * FT,
+        2.2 * FT,
         '#132530',
         side < 0 ? '#62b6ed' : '#e7807d',
       ),
-      side * (10 + grow),
-      3,
-      -16.8 - grow,
+      side * 26 * FT,
+      11 * FT,
+      backWallZ + 0.2,
     );
-  for (const x of [-13 - grow, 13 + grow]) {
-    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, -12 - grow);
-    place(scene, solid(0.22, 11, 0.22, 0x7d919c, 0.8), x, 5, 9 + grow);
+  // A lighting truss across the far end of the hall, 22 feet up, on a leg at
+  // either end clear of the side stands.
+  const trussZ = -(half + 5 * FT);
+  const trussHeight = 22 * FT;
+  const trussHalf = half + standGap + standDepth + 4 * FT;
+  for (const x of [-trussHalf, trussHalf])
+    place(
+      scene,
+      solid(0.6 * FT, trussHeight, 0.6 * FT, 0x7d919c, 0.8),
+      x,
+      trussHeight / 2,
+      trussZ,
+    );
+  for (const y of [trussHeight, trussHeight - 1.2 * FT])
+    place(
+      scene,
+      solid(trussHalf * 2, 0.3 * FT, 0.4 * FT, 0x80939f, 0.8),
+      0,
+      y,
+      trussZ,
+    );
+  for (let x = -trussHalf; x <= trussHalf; x += 3 * FT) {
+    const strut = solid(1.6 * FT, 0.15 * FT, 0.15 * FT, 0x80939f, 0.8);
+    strut.rotation.z = 0.7;
+    place(scene, strut, x, trussHeight - 0.6 * FT, trussZ);
   }
-  for (const z of [-12 - grow]) {
-    place(scene, solid(26 + grow * 2, 0.15, 0.2, 0x80939f, 0.8), 0, 10.5, z);
-    place(scene, solid(26 + grow * 2, 0.15, 0.2, 0x80939f, 0.8), 0, 9.8, z);
-    for (let x = -12 - grow; x <= 12 + grow; x += 1.5) {
-      const strut = solid(1.65, 0.08, 0.08, 0x80939f, 0.8);
-      strut.rotation.z = 0.45;
-      place(scene, strut, x, 10.15, z);
-    }
-    // Stage lights clamped under the truss, aimed at the field. Their lenses
-    // are bright enough to glow where the quality tier allows it.
-    const lens = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xfff2dc).multiplyScalar(4),
-    });
-    for (let i = -2; i <= 2; i++) {
-      const x = i * ((12 + grow) / 2.4);
-      const housing = solid(0.9, 0.55, 0.7, 0x1f272c, 0.3);
-      housing.rotation.x = -0.5;
-      place(scene, housing, x, 9.35, z + 0.45);
-      const face = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), lens);
-      // Tipped to face down and out toward the field.
-      face.rotation.x = Math.PI / 2 - 0.5;
-      place(scene, face, x, 9.12, z + 0.6);
-    }
+  // Stage lights clamped under the truss, aimed at the field. Their lenses
+  // are bright enough to glow where the quality tier allows it.
+  const lens = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0xfff2dc).multiplyScalar(4),
+  });
+  for (let i = -3; i <= 3; i++) {
+    const x = i * 7 * FT;
+    const housing = solid(1.6 * FT, 1.1 * FT, 1.3 * FT, 0x1f272c, 0.3);
+    housing.rotation.x = -0.5;
+    place(scene, housing, x, trussHeight - 2.4 * FT, trussZ + 0.9 * FT);
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.5 * FT, 24), lens);
+    // Tipped to face down and out toward the field.
+    face.rotation.x = Math.PI / 2 - 0.5;
+    place(scene, face, x, trussHeight - 2.8 * FT, trussZ + 1.25 * FT);
   }
 }
 
@@ -789,14 +895,13 @@ export function createArenaScene(
   quietFarShadows(venue);
   mergeStaticMeshes(venue, []);
   scene.add(venue);
-  // Fog and draw distance were tuned for the original field; stretch them with
-  // the field so a bigger one is never lost in the haze.
-  const roomy = (FIELD_SIZE * SCALE) / (HALL_LAYOUT_HALF * 2);
+  // The hall is a true-scale room some 130 feet across, so the haze only
+  // starts well past the field and the far wall is still drawn.
   if (scene.fog instanceof THREE.Fog) {
-    scene.fog.near *= roomy;
-    scene.fog.far *= roomy;
+    scene.fog.near = 80;
+    scene.fog.far = 280;
   }
-  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120 * roomy);
+  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 420);
   const pipeline = createRenderPipeline(renderer, scene, camera, () => {
     stillFrameDrawn = false;
   });
@@ -844,7 +949,7 @@ export function createArenaScene(
     }
   }
   // The rings round each robot grow with it.
-  const ringSize = 0.78 * (ROBOT_RADIUS / 28);
+  const ringSize = (ROBOT_WIDTH / 2) * SCALE * 1.14;
   const playerRing = ring(ringSize, blue, 0.035);
   scene.add(playerRing);
   const botRing = ring(ringSize, red, 0.025);
@@ -929,16 +1034,64 @@ export function createArenaScene(
       hiveLooks.push({ material, opacity: material.opacity });
     });
   let hiveFade = 1;
-  // Which slot in its CELL each stored ARTIFACT has, kept until it leaves so
-  // the rest do not shuffle round as the CELL pours.
-  const slots = new Map<number, number>();
+  // How far the follow camera has eased into framing the HIVE, 0 to 1.
+  let hiveView = 0;
+  // Where the HIVES' CELLS can be, for telling when they hide the robot.
+  const hiveBox = new THREE.Box3(
+    new THREE.Vector3(
+      -FRAME_HALF_WIDTH * SCALE,
+      MAT_TOP + 30 * IN,
+      -(SPILL_MOUTH * SCALE + 3 * IN),
+    ),
+    new THREE.Vector3(
+      FRAME_HALF_WIDTH * SCALE,
+      MAT_TOP + 66 * IN,
+      SPILL_MOUTH * SCALE + 3 * IN,
+    ),
+  );
+  const sightLine = new THREE.Ray();
+  const sightHit = new THREE.Vector3();
+  const robotEye = new THREE.Vector3();
   const cellOf = (piece: World['pieces'][number]) =>
     hives[piece.stored === 'bot' ? 'red' : 'blue'].cells[piece.cell ?? 1];
+  type Cell = ReturnType<typeof cellOf>;
   // ARTIFACTS on their way into a CELL, drawn by their flight until it lands.
   const landing = new Set<number>();
   const storedSeen = new Set(
     world.pieces.filter((piece) => piece.stored).map((piece) => piece.id),
   );
+  // Every ARTIFACT in a CELL is a ball rolling about inside it (see
+  // cell-physics): it comes in through the opening, settles in a pile at the
+  // back, and slides to the open end when the HIVE tips.
+  const cellBalls = new Map<number, CellBall & { cell: Cell }>();
+  const cellGravity = new THREE.Vector3();
+  const cellTurn = new THREE.Quaternion();
+  const stepCells = (pieces: World['pieces'], dt: number) => {
+    const byCell = new Map<Cell, CellBall[]>();
+    for (const piece of pieces) {
+      const ball = piece.stored && cellBalls.get(piece.id);
+      if (!ball) continue;
+      const group = byCell.get(ball.cell);
+      if (group) group.push(ball);
+      else byCell.set(ball.cell, [ball]);
+    }
+    for (const [cell, balls] of byCell) {
+      // Gravity, turned into the CELL's own frame: tipping the HIVE tips it.
+      cell.inside.getWorldQuaternion(cellTurn).invert();
+      cellGravity.set(0, -GRAVITY, 0).applyQuaternion(cellTurn);
+      stepCell(balls, cellGravity, dt);
+    }
+  };
+  // The NECTAR a CELL starts with is already sitting at its back.
+  world.pieces.forEach((piece, index) => {
+    if (piece.stored)
+      cellBalls.set(piece.id, {
+        ...restingBall(piece.radius / INCH, index % 3),
+        cell: cellOf(piece),
+      });
+  });
+  for (const hive of Object.values(hives)) hive.root.updateMatrixWorld(true);
+  for (let t = 0; t < 1.5; t += 1 / 30) stepCells(world.pieces, 1 / 30);
   // The ARTIFACTS on the mats are drawn as instances: one body and one set
   // of seams per colour, however many balls are out. Only a ball in flight
   // (into a robot or a CELL) gets a mesh of its own.
@@ -1024,12 +1177,14 @@ export function createArenaScene(
   };
   // Framed off the mats so the whole square field fills the view.
   const fieldSpan = FIELD_SIZE * SCALE;
+  // Far enough back that the five-foot HIVE clears the scoreboard and the
+  // BASES in the near corners clear the driver station.
   const arenaDistance = () =>
-    Math.max(fieldSpan * 1.15, (fieldSpan * 1.3) / camera.aspect);
+    Math.max(fieldSpan * 1.35, (fieldSpan * 1.5) / camera.aspect);
   const resetArenaCamera = () => {
     const distance = arenaDistance();
     camera.position.set(0, distance * 0.76, distance * 0.78);
-    cameraTarget.set(0, 0, -0.2);
+    cameraTarget.set(0, 1.5, 1.2);
     camera.lookAt(cameraTarget);
   };
   const observer = new ResizeObserver(resize);
@@ -1088,11 +1243,23 @@ export function createArenaScene(
       hives[alliance].root.updateMatrixWorld(true);
     }
     if (rangeRing.visible) placeRange(state.hives.blue.up);
-    const hidden =
-      mode === 'follow' &&
-      Math.abs(state.player.x - FIELD_CENTER) < FRAME_HALF_WIDTH + 40 &&
-      state.player.y > FIELD_CENTER - 330 &&
-      state.player.y < FIELD_CENTER + 60;
+    // Is a HIVE between the follow camera and the robot?
+    let hidden = false;
+    if (mode === 'follow') {
+      toScene(
+        robotEye,
+        state.player.x,
+        state.player.y,
+        MAT_TOP + ROBOT_WIDTH * SCALE * 0.4,
+      );
+      sightLine.origin.copy(camera.position);
+      sightLine.direction.copy(robotEye).sub(camera.position);
+      const reach = sightLine.direction.length();
+      sightLine.direction.divideScalar(reach);
+      hidden =
+        sightLine.intersectBox(hiveBox, sightHit) !== null &&
+        sightHit.distanceTo(camera.position) < reach;
+    }
     const fade = THREE.MathUtils.damp(hiveFade, hidden ? 0.22 : 1, 8, dt);
     if (Math.abs(fade - hiveFade) > 0.002) {
       hiveFade = fade;
@@ -1204,8 +1371,33 @@ export function createArenaScene(
       );
     });
     const drawn = { B: 0, R: 0, G: 0 };
-    // Slots free up as ARTIFACTS leave their CELL.
-    for (const [id] of slots) if (!state.pieces[id]?.stored) slots.delete(id);
+    // A ball poured out of its CELL is on the mats now, not in the CELL. The
+    // match only says which ARTIFACT left, so the ball that goes is whichever
+    // of its colour sits nearest the opening: nothing vanishes from the back.
+    for (const [id, ball] of cellBalls) {
+      const piece = state.pieces[id];
+      if (piece?.stored) continue;
+      cellBalls.delete(id);
+      if (!piece) continue;
+      let front: number | undefined;
+      let frontZ = ball.z;
+      for (const [otherId, other] of cellBalls)
+        if (
+          other.cell === ball.cell &&
+          other.z > frontZ &&
+          state.pieces[otherId].color === piece.color
+        ) {
+          front = otherId;
+          frontZ = other.z;
+        }
+      if (front === undefined) continue;
+      // The one still inside takes this ball's place, spin and all.
+      cellBalls.set(front, ball);
+      const spin = rolls.get(id)!.clone();
+      rolls.get(id)!.copy(rolls.get(front)!);
+      rolls.get(front)!.copy(spin);
+    }
+    if (!paused) stepCells(state.pieces, Math.min(dt, 0.05));
     state.pieces.forEach((piece) => {
       const key = lookOf(piece.color, piece.alliance);
       const roll = rolls.get(piece.id)!;
@@ -1235,21 +1427,22 @@ export function createArenaScene(
           });
         }
         if (landing.has(piece.id)) return;
-        // Settled in its CELL, riding along as the HIVE tips.
-        if (!slots.has(piece.id)) {
-          const taken = new Set<number>();
-          for (const [id, slot] of slots)
-            if (cellOf(state.pieces[id]) === cell) taken.add(slot);
-          let free = 0;
-          while (taken.has(free)) free++;
-          slots.set(piece.id, free);
+        // Just landed: it rolls in through the opening.
+        let ball = cellBalls.get(piece.id);
+        if (!ball) {
+          ball = { ...enteringBall(piece.radius / INCH), cell };
+          cellBalls.set(piece.id, ball);
         }
-        const size = radius * CELL_BALL_SCALE;
-        cellSlot(slots.get(piece.id)!, size, ballSpot);
+        // Rolling, not sliding.
+        if (!paused) {
+          roll.x += (ball.vz * Math.min(dt, 0.05)) / ball.r;
+          roll.z -= (ball.vx * Math.min(dt, 0.05)) / ball.r;
+        }
+        ballSpot.set(ball.x * IN, ball.y * IN, ball.z * IN);
         ballPose.compose(
           ballSpot,
           ballTurn.setFromEuler(roll),
-          ballSize.setScalar(size),
+          ballSize.setScalar(radius),
         );
         ballPose.premultiply(cell.inside.matrixWorld);
         const slot = drawn[key]++;
@@ -1390,10 +1583,26 @@ export function createArenaScene(
     // visibly stops rather than the view still drifting after the robot.
     if (mode === 'follow' && !paused) {
       const p = player.root.position;
-      desiredPosition.set(p.x, FOLLOW_HEIGHT, p.z + FOLLOW_BACK);
+      // How far into the HIVE framing to be, eased so the camera glides.
+      const spot = loadingSpot('blue', state.hives.blue.up);
+      const away = Math.hypot(state.player.x - spot.x, state.player.y - spot.y);
+      const goal = THREE.MathUtils.clamp(
+        (HIVE_VIEW_FAR - away) / (HIVE_VIEW_FAR - HIVE_VIEW_NEAR),
+        0,
+        1,
+      );
+      hiveView = motion.matches
+        ? goal
+        : THREE.MathUtils.damp(hiveView, goal, 2.5, dt);
+      const view = (key: keyof FollowView) =>
+        THREE.MathUtils.lerp(FOLLOW[key], FOLLOW_AT_HIVE[key], hiveView);
+      desiredPosition.set(p.x, view('height'), p.z + view('back'));
       const smoothing = motion.matches ? 1 : 1 - Math.exp(-6 * dt);
       camera.position.lerp(desiredPosition, smoothing);
-      lookAt.lerp(followLook.set(p.x, 0.1, p.z - FOLLOW_AHEAD), smoothing);
+      lookAt.lerp(
+        followLook.set(p.x, view('look'), p.z - view('ahead')),
+        smoothing,
+      );
       camera.lookAt(lookAt);
       cameraTarget.copy(lookAt);
     }
@@ -1408,8 +1617,8 @@ export function createArenaScene(
       if (next === 'arena') resetArenaCamera();
       if (next === 'follow') {
         const p = position(world.player.x, world.player.y);
-        lookAt.set(p.x, 0.1, p.z - FOLLOW_AHEAD);
-        camera.position.set(p.x, FOLLOW_HEIGHT, p.z + FOLLOW_BACK);
+        lookAt.set(p.x, FOLLOW.look, p.z - FOLLOW.ahead);
+        camera.position.set(p.x, FOLLOW.height, p.z + FOLLOW.back);
         cameraTarget.copy(lookAt);
         camera.lookAt(lookAt);
       }

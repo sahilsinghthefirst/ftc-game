@@ -3,8 +3,10 @@ import {
   BLUE_BASE,
   cellMouth,
   FIELD_CENTER,
+  INCH,
   LOAD_FRONT,
   loadingSpot,
+  ROBOT_WIDTH,
   type Alliance,
   type CellEnd,
 } from './field.ts';
@@ -42,12 +44,14 @@ export function carryCapacity(module: string) {
 }
 
 // Top speed on the mats for each drivetrain, before anything else on the
-// robot slows it down.
+// robot slows it down - real FTC speeds, in inches a second: a fast omni or
+// six-wheel base does about 6 ft/s, a mecanum base on 312 RPM motors about
+// 4.5, and a traction base geared for pushing about 3.
 export function driveSpeed(drive: string) {
-  if (drive === 'orbit') return 330;
-  if (drive === 'trailblazer') return 315;
-  if (drive === 'comet') return 290;
-  return 185;
+  if (drive === 'orbit') return 72 * INCH;
+  if (drive === 'trailblazer') return 66 * INCH;
+  if (drive === 'comet') return 54 * INCH;
+  return 36 * INCH;
 }
 
 // How fast each drivetrain swings its nose round, in radians per second. The
@@ -84,7 +88,8 @@ export function strafeFactor(drive: string) {
 // takes an age over each ARTIFACT and bogs the robot down while it swallows
 // one; TwinFlex is a heavy pair of rollers that inhales on contact.
 export type CollectProfile = {
-  // How far from the robot's center an ARTIFACT can be grabbed.
+  // How far from the robot's center an ARTIFACT can be grabbed: its front
+  // edge, plus however far past it the collector reaches.
   radius: number;
   // Seconds of intake cycle before the next one can be picked up.
   cycle: number;
@@ -99,11 +104,15 @@ export type CollectProfile = {
   topSpeed: number;
 };
 
+// A collector that grabs ARTIFACTS up to this many inches past the front of
+// the robot.
+const reachPast = (inches: number) => ROBOT_WIDTH / 2 + inches * INCH;
+
 export function collectProfile(module: string): CollectProfile {
   // Heavy twin rollers: the robot is slower everywhere for carrying them.
   if (module === 'twinflex')
     return {
-      radius: 58,
+      radius: reachPast(3.4),
       cycle: 0.14,
       drag: 0.92,
       dragFor: 0.12,
@@ -115,7 +124,7 @@ export function collectProfile(module: string): CollectProfile {
   // together - closing it on a lone one wastes most of two seconds.
   if (module === 'dualjaw')
     return {
-      radius: 66,
+      radius: reachPast(5.5),
       cycle: 1.6,
       drag: 0.4,
       dragFor: 1,
@@ -126,7 +135,7 @@ export function collectProfile(module: string): CollectProfile {
   // a tip, so it fills a CELL fastest - as long as you ignore POLLEN.
   if (module === 'sorter')
     return {
-      radius: 86,
+      radius: reachPast(7.4),
       cycle: 0.3,
       drag: 0.8,
       dragFor: 0.25,
@@ -135,7 +144,7 @@ export function collectProfile(module: string): CollectProfile {
       topSpeed: 1,
     };
   return {
-    radius: 95,
+    radius: reachPast(10.4),
     cycle: 0.72,
     drag: 0.3,
     dragFor: 0.7,
@@ -158,11 +167,15 @@ export function shoveResist(drive: string) {
 // drives for carrying it. Listed shortest reach, fastest robot first.
 export const REACH_ORDER = ['swingarm', 'elevator', 'turret', 'cascade'];
 
+// How far Scout-7 loads from: about what the Arc Pivot Arm it is built with
+// reaches.
+export const BOT_LOAD_REACH = 150;
+
 export function reachProfile(reach: string) {
-  if (reach === 'swingarm') return { radius: 85, topSpeed: 1.12 };
-  if (reach === 'turret') return { radius: 170, topSpeed: 0.9 };
-  if (reach === 'cascade') return { radius: 220, topSpeed: 0.8 };
-  return { radius: 125, topSpeed: 1 };
+  if (reach === 'swingarm') return { radius: 140, topSpeed: 1.12 };
+  if (reach === 'turret') return { radius: 240, topSpeed: 0.9 };
+  if (reach === 'cascade') return { radius: 300, topSpeed: 0.8 };
+  return { radius: 185, topSpeed: 1 };
 }
 
 // How close to an upward CELL's mouth a robot has to be to load it. Only the

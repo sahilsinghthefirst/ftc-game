@@ -7,39 +7,41 @@
 // Everything that needs to know where something is - physics walls, the bot's
 // navigation, the 3D scene - reads from here, so the field can be resized
 // without numbers drifting apart between modules.
+//
+// Everything is to true scale against everything else: the field, robots,
+// balls and HIVE are all their real sizes, in field units of INCH to the
+// inch.
 
 export const TILES = 6;
-// The mats are scaled up half again from the robots' true proportions,
-// giving a bigger field to drive, spread out and race across.
+// A real FTC field: six 24 in. foam mats a side, 144 in. wall to wall.
 export const TILE = 202.5;
 export const FIELD_SIZE = TILES * TILE;
 export const FIELD_CENTER = FIELD_SIZE / 2;
+export const INCH = TILE / 24;
 
-// A robot's body, as a circle round its center: what ARTIFACTS and the other
-// robot bump into. The 3D model is drawn to match (ROBOT_MODEL_SCALE in the
-// arena scene), so resizing a robot means changing both together.
-export const ROBOT_RADIUS = 32;
-// The balls, as radii. NECTAR is 1.28 times POLLEN across, as the real
-// 3.6 in. NECTAR is to the 2.8 in. POLLEN. Physics, staging and the 3D balls
-// all read these, so resizing a ball is one change here.
-export const POLLEN_RADIUS = 10.5;
-export const NECTAR_SCALE = 1.28;
+// A robot is the 18 in. square FTC robots start the match inside. Its body,
+// what ARTIFACTS and the other robot bump into, is a circle a little inside
+// its square outline - between its sides and its corners. The 3D model is
+// drawn ROBOT_WIDTH across, so the two always match.
+export const ROBOT_WIDTH = 18 * INCH;
+export const ROBOT_RADIUS = ROBOT_WIDTH * 0.45;
+// The balls, as radii, at their real sizes: 2.8 in. POLLEN and 3.6 in.
+// NECTAR. Physics, staging and the 3D balls all read these.
+export const POLLEN_RADIUS = 1.4 * INCH;
+export const NECTAR_SCALE = 3.6 / 2.8;
 export const NECTAR_RADIUS = POLLEN_RADIUS * NECTAR_SCALE;
 
-// How close a robot's center or a loose ARTIFACT can get to the perimeter wall.
-export const ROBOT_MARGIN = ROBOT_RADIUS + 15;
+// How close a robot's center or a loose ARTIFACT can get to the perimeter
+// wall: a robot can drive right up to it.
+export const ROBOT_MARGIN = ROBOT_WIDTH / 2 + 2;
 export const BALL_MARGIN = POLLEN_RADIUS + 2;
 
 export type Alliance = 'blue' | 'red';
 
 // The HIVE structure in the middle of the field, built from the BIOBUZZ
-// manual's dimensions (section 9.6) at 3.75 field units to the inch: big
-// enough to be the centrepiece, small enough that the follow camera, parked
-// at a CELL to load it, still has the top of that CELL in view. A frame of
-// two A-frames and a crossbar holds a blue HIVE on the left and a red HIVE on
-// the right. Each HIVE is a seesaw with a CELL at either end, and one CELL
-// always faces up.
-export const INCH = 3.75;
+// manual's dimensions (section 9.6). A frame of two A-frames and a crossbar
+// holds a blue HIVE on the left and a red HIVE on the right. Each HIVE is a
+// seesaw with a CELL at either end, and one CELL always faces up.
 export const HIVE_X: Record<Alliance, number> = {
   blue: FIELD_CENTER - 12.75 * INCH,
   red: FIELD_CENTER + 12.75 * INCH,
@@ -82,10 +84,12 @@ export function barContact(bar: Bar, x: number, y: number) {
 }
 
 // An upward CELL opens outward and upward, so it can only be loaded from in
-// front: a robot has to be at least LOAD_FRONT out from the crossbar on that
-// CELL's side, and within its reach of the mouth, which hangs CELL_MOUTH out.
+// front: a robot's center has to be at least LOAD_FRONT out from the
+// crossbar on that CELL's side - its front edge out past the lip of the
+// opening, not parked underneath it - and within its reach of the mouth,
+// which hangs CELL_MOUTH out.
 export const CELL_MOUTH = 16 * INCH;
-export const LOAD_FRONT = FRAME_HALF_DEPTH + 4;
+export const LOAD_FRONT = 19.3 * INCH + ROBOT_WIDTH / 2 + INCH;
 // A downward CELL's open end hangs further out, and lower; it pours from here.
 export const SPILL_MOUTH = 21.5 * INCH;
 
@@ -193,3 +197,9 @@ export const pieceLayout: Spot[] = [
     ([x, y]): Spot => [x, y, 'G'],
   ),
 ];
+
+// Where the robots start: in the middle of their BASE mat across, and as far
+// toward the near wall as fits in front of the GARDEN's row of POLLEN.
+const startY = FIELD_SIZE - POLLEN_WALL - POLLEN_RADIUS - ROBOT_WIDTH / 2 - 6;
+export const PLAYER_START = { x: BLUE_BASE.x, y: startY };
+export const BOT_START = { x: RED_BASE.x, y: startY };

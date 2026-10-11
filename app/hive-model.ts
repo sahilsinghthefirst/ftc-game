@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mergeStaticMeshes } from './merge-static';
 import { place, solid } from './scene-kit';
+import { CELL_INSIDE } from './cell-physics';
 import { INCH, type Alliance, type CellEnd } from './field';
 
 // The BIOBUZZ HIVE structure, modelled on the manual's drawings (section 9.6):
@@ -17,10 +18,10 @@ export const IN = INCH / 50;
 export const PIVOT_HEIGHT = 43.95 * IN;
 export const HIVE_TILT = Math.PI / 6;
 const CELL_BACK = 9.42 * IN;
-const CELL_DEPTH = 12.04 * IN;
-const CELL_HALF = 10 * IN;
-const CELL_EAVE = 7.61 * IN;
-const CELL_PEAK = 14 * IN;
+const CELL_DEPTH = CELL_INSIDE.depth * IN;
+const CELL_HALF = CELL_INSIDE.half * IN;
+const CELL_EAVE = CELL_INSIDE.eave * IN;
+const CELL_PEAK = CELL_INSIDE.peak * IN;
 // The CELL floor sits a little below the pivot line.
 const CELL_FLOOR = -1.4 * IN;
 const RIM = 1.1 * IN;
@@ -353,41 +354,6 @@ export type HiveModel = {
   >;
 };
 
-// Spots for ARTIFACTS inside a CELL as [across, layer, out from the back
-// wall], in inches: three across the floor in two rows, four nested on top
-// of those and two more under the ridge. An upward CELL's back wall is its
-// low end, so that is where everything settles.
-const SLOTS: [number, number, number][] = [
-  [-6.2, 0, 3.2],
-  [0, 0, 3.2],
-  [6.2, 0, 3.2],
-  [-6.2, 0, 8.8],
-  [0, 0, 8.8],
-  [6.2, 0, 8.8],
-  [-3.1, 1, 3.2],
-  [3.1, 1, 3.2],
-  [-3.1, 1, 8.8],
-  [3.1, 1, 8.8],
-  [0, 2, 3.2],
-  [0, 2, 8.8],
-];
-// How big an ARTIFACT is drawn inside a CELL, against its size on the mats.
-// The mats' balls are drawn big so they read from the follow camera; in a
-// CELL they come down toward the real ball-to-CELL size, so a full one still
-// reads as a pile rather than a jam.
-export const CELL_BALL_SCALE = 0.7;
-
-export function cellSlot(index: number, radius: number, target: THREE.Vector3) {
-  const [x, layer, z] = SLOTS[index % SLOTS.length];
-  // A TipTray can overfill a CELL past the dozen spots; the extras pile on.
-  const extra = Math.floor(index / SLOTS.length) * 1.2;
-  return target.set(
-    (x + extra) * IN,
-    radius + (layer * 4.4 + extra) * IN,
-    z * IN,
-  );
-}
-
 // One alliance's HIVE, built level with its pivot at the origin and the near
 // CELL (end 1) toward +z.
 export function createHive(alliance: Alliance): HiveModel {
@@ -538,7 +504,8 @@ export function createHive(alliance: Alliance): HiveModel {
     const inside = new THREE.Object3D();
     cell.add(inside);
     const mouth = new THREE.Object3D();
-    mouth.position.set(0, 5 * IN, CELL_DEPTH * 0.55);
+    // Where a launched ball comes in, before it rolls to the back.
+    mouth.position.set(0, 6 * IN, (CELL_INSIDE.depth - 2) * IN);
     cell.add(mouth);
     containers.push(inside, mouth);
     cells[end] = { inside, mouth };

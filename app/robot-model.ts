@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AssemblyCategory } from './assembly-bay';
 import { mergeStaticMeshes } from './merge-static';
+import { NECTAR_SCALE, POLLEN_RADIUS, ROBOT_WIDTH } from './field';
 export type MovingParts = {
   wheels: THREE.Group[];
   intake: THREE.Group | null;
@@ -608,25 +609,36 @@ function addCollector(
   return group;
 }
 
+// How wide the robot model is, wheel to wheel, in its own units. It is drawn
+// ROBOT_WIDTH (18 in.) across on the field, so this fixes its true scale.
+export const ROBOT_MODEL_WIDTH = 5.9;
+// A real POLLEN, in the model's own units.
+const MODEL_POLLEN = POLLEN_RADIUS * (ROBOT_MODEL_WIDTH / ROBOT_WIDTH);
+
 // The inside of every storage module, in its own units: wall to wall, front
-// to back, the top of its floor, and its middle front to back. It is a hopper
-// the full width of the chassis, sized so the balls it carries are the same
-// size as on the mats - three POLLEN or two NECTAR to a row - and raised on
+// to back, the top of its floor, and its middle front to back. It is sized to
+// hold real balls three POLLEN or two NECTAR to a row, and raised on
 // standoffs clear of the Control Hub and battery underneath.
 export const STORAGE_INSIDE = {
-  width: 4.72,
-  depth: 2.1,
+  width: MODEL_POLLEN * 6 + 0.12,
+  depth: MODEL_POLLEN * NECTAR_SCALE * 2 + 0.14,
   floor: 1.72,
-  middle: 0.55,
+  middle: 0.4,
 };
 
 function addStorage(root: THREE.Group, id: string, slot: number) {
   const group = new THREE.Group();
   group.position.z = (slot - 1) * 0.28;
   const { width, depth, floor: floorY, middle } = STORAGE_INSIDE;
-  // Wall height follows how much the module holds: one row of NECTAR for
-  // the indexer and the hopper, two of POLLEN for the tall magazine.
-  const height = id === 'stackpack' ? 3.2 : id === 'pocket' ? 1.6 : 2.0;
+  // Wall height follows how much the module holds: a row of POLLEN for the
+  // indexer, a row of NECTAR for the hopper, two of POLLEN for the magazine.
+  const pollen = MODEL_POLLEN * 2;
+  const height =
+    id === 'stackpack'
+      ? pollen * 2 + 0.1
+      : id === 'pocket'
+        ? pollen + 0.1
+        : pollen * NECTAR_SCALE + 0.1;
   const panelMaterial = material(0x4d8aa4, {
     transparent: true,
     opacity: 0.38,
@@ -654,14 +666,15 @@ function addStorage(root: THREE.Group, id: string, slot: number) {
   );
   floor.position.set(0, floorY - 0.04, middle);
   group.add(back, left, right, floor);
-  // Four standoffs carry it on the chassis side rails.
-  const post = floorY - 0.9;
-  for (const x of [-2.2, 2.2])
-    for (const z of [middle - depth / 2 + 0.15, middle + depth / 2 - 0.15]) {
+  // Four standoffs carry it on the electronics plate.
+  const plateTop = 1.08;
+  const post = floorY - plateTop;
+  for (const x of [-(width / 2 - 0.1), width / 2 - 0.1])
+    for (const z of [middle - depth / 2 + 0.1, middle + depth / 2 - 0.1]) {
       const standoff = box(0.14, post, 0.14, palette.aluminum, {
         metalness: 0.8,
       });
-      standoff.position.set(x, 0.9 + post / 2, z);
+      standoff.position.set(x, plateTop + post / 2, z);
       group.add(standoff, bolt(x, floorY + 0.01, z));
     }
   // The indexer's floor is split into bays three across, one per POLLEN in a
