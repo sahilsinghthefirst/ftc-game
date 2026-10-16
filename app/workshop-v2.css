@@ -1252,6 +1252,151 @@
   color: #7a8385;
 }
 
+/* How to play: a short slideshow on the same workshop card. */
+.how-to-play {
+  gap: 12px;
+  padding: 22px;
+}
+
+.how-to-play .eyebrow {
+  margin: 0;
+  color: #9d3b25;
+}
+
+.how-to-play-slide {
+  display: grid;
+  gap: 8px;
+  animation: how-to-play-in 180ms ease-out;
+}
+
+.how-to-play-art {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2;
+  border: 1px solid #c9c1b4;
+  border-radius: 3px;
+  background: #d9dfe0;
+}
+
+.how-to-play [data-slot='dialog-title'] {
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.how-to-play [data-slot='dialog-description'] {
+  min-height: 4.65em;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.how-to-play kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0 5px;
+  border: 1px solid #9c9386;
+  border-bottom-width: 3px;
+  border-radius: 3px;
+  background: #fbf8f1;
+  color: #33454c;
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.how-to-play-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #d4ccc0;
+}
+
+.how-to-play-back,
+.how-to-play-button {
+  border: 1px solid #aaa296;
+  border-radius: 3px;
+  background: #faf7ef;
+  color: #2b3a40;
+  box-shadow: 0 3px 0 #c4bcb0;
+}
+
+.how-to-play-next {
+  border-radius: 3px;
+  background: #d94d2b;
+  color: #fff8e9;
+  box-shadow: 0 3px 0 #8f331f;
+}
+
+.how-to-play-next:hover {
+  background: #e45b34;
+}
+
+.how-to-play-dots {
+  display: flex;
+  gap: 2px;
+}
+
+/* A dot to look at, a finger-sized button to press. */
+.how-to-play-dots button {
+  display: grid;
+  min-width: 18px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.how-to-play-dots button::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 5px;
+  background: #c9c1b4;
+  content: '';
+  transition: width 150ms ease-out;
+}
+
+.how-to-play-dots button.is-current::before {
+  width: 22px;
+  background: #d94d2b;
+}
+
+.how-to-play-dots button:focus-visible {
+  outline: 2px solid #2f6fd6;
+  outline-offset: 1px;
+}
+
+.how-to-play-button {
+  width: 100%;
+  height: 44px;
+  margin-top: 20px;
+  font-weight: 650;
+}
+
+.how-to-play-button + .start-match-button {
+  margin-top: 12px;
+}
+
+@keyframes how-to-play-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .how-to-play-slide {
+    animation: none;
+  }
+
+  .how-to-play-dots button::before {
+    transition: none;
+  }
+}
+
 /* Restrain the game chrome so the arena, not dashboard decoration, carries it. */
 .match-header {
   border-bottom: 4px solid #d94d2b;
@@ -1602,6 +1747,43 @@
 
 .result-hero h1 {
   color: #213138;
+}
+
+/* Team 26507 Geneton's mascot: with a trophy after a win, with his wrench
+   otherwise. */
+.result-mascot {
+  width: clamp(120px, 14vw, 180px);
+  height: auto;
+  margin: 0 0 18px -6px;
+}
+
+/* The mascot cheering the driver on beside the briefing headline. */
+.briefing-hero {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 3vw, 40px);
+}
+
+.briefing-hero > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.briefing-mascot {
+  width: clamp(84px, 13vw, 190px);
+  height: auto;
+  flex: none;
+}
+
+.team-credit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-credit img {
+  width: auto;
+  height: 28px;
 }
 
 .final-score span {

@@ -291,6 +291,9 @@ export function playerTarget(
 // and the other CELL swings up to be loaded next - from the other side.
 export const TIP_POINTS = 20;
 
+// Parked in your own BASE when the match ends.
+export const BASE_POINTS = 15;
+
 // NECTAR ('P') are the big ARTIFACTS. They tip a HIVE faster, but they eat
 // two slots in most storage - only the Low Rider Hopper's open bin takes one
 // whole, which is what makes that module worth its small capacity. POLLEN

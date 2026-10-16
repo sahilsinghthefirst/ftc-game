@@ -975,6 +975,13 @@
   font-size: 20px;
   letter-spacing: -0.02em;
 }
+/* Team 26507 Geneton's mascot, there for the start of every match. */
+.countdown-mascot {
+  width: clamp(72px, 9vw, 110px);
+  height: auto;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 4px 14px #0c1f2e);
+}
 .match-countdown > strong {
   font-family: var(--font-geist-mono);
   font-weight: 500;

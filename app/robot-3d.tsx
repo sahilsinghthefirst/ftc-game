@@ -74,7 +74,7 @@ export function Robot3DBay(props: Props) {
     sceneRef.current = scene;
     // The pit never moves, so its many small parts are fused into a few meshes.
     const room = new THREE.Group();
-    workshopRoom(room);
+    workshopRoom(room, () => invalidateRef.current());
     mergeStaticMeshes(room, []);
     scene.add(room);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);

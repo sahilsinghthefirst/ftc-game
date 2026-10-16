@@ -76,6 +76,45 @@ export function label(
   return mesh;
 }
 
+// Team 26507 Geneton's mascot, as a framed poster: the cut-out artwork on a
+// light board. The picture loads in the background, so views that only draw
+// when something changes pass `redraw` to be told when it arrives.
+const MASCOT = '/mascot/geneton-penguin.webp';
+// Height over width of the artwork.
+const MASCOT_SHAPE = 577 / 640;
+
+export function mascotPoster(width: number, redraw?: () => void) {
+  const height = width * 1.08;
+  const poster = new THREE.Group();
+  const frame = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ color: 0x24323b, toneMapped: false }),
+  );
+  poster.add(frame);
+  const border = width * 0.035;
+  const board = new THREE.Mesh(
+    new THREE.PlaneGeometry(width - border * 2, height - border * 2),
+    new THREE.MeshBasicMaterial({ color: 0xf1ece1, toneMapped: false }),
+  );
+  board.position.z = width * 0.002;
+  poster.add(board);
+  const picture = new THREE.TextureLoader().load(MASCOT, () => redraw?.());
+  picture.colorSpace = THREE.SRGBColorSpace;
+  picture.anisotropy = 4;
+  const artWidth = width * 0.84;
+  const art = new THREE.Mesh(
+    new THREE.PlaneGeometry(artWidth, artWidth * MASCOT_SHAPE),
+    new THREE.MeshBasicMaterial({
+      map: picture,
+      transparent: true,
+      toneMapped: false,
+    }),
+  );
+  art.position.z = width * 0.004;
+  poster.add(art);
+  return poster;
+}
+
 // A flat marker ring on the mats. Its colour is pushed a little past white
 // so it reads as lit and picks up a soft glow where the tier allows it.
 export function ring(radius: number, color: number, thickness = 0.035) {
@@ -195,7 +234,7 @@ function surface(
 // model is ROBOT_MODEL_WIDTH units across for its 18 in., so IN is one inch.
 const IN = ROBOT_MODEL_WIDTH / 18;
 
-export function workshopRoom(scene: THREE.Object3D) {
+export function workshopRoom(scene: THREE.Object3D, redraw?: () => void) {
   // The bench top is at 0, where the robot sits; the floor is a bench height
   // below it.
   const floorY = -36 * IN;
@@ -230,9 +269,9 @@ export function workshopRoom(scene: THREE.Object3D) {
     floorY + wallHeight / 2,
     -11,
   );
-  // A 36 x 24 in. pegboard of hand tools, at working height to the left of
-  // the wall signs so the view behind the robot stays calm.
-  const boardX = -12.4;
+  // A 36 x 24 in. pegboard of hand tools, at working height to the right of
+  // the wall signs, where it shows as the robot is turned round.
+  const boardX = 12.4;
   const boardY = 6 * IN + 12 * IN;
   const board = pegboard((36 * IN) / 0.8, (24 * IN) / 0.8);
   place(
@@ -323,6 +362,9 @@ export function workshopRoom(scene: THREE.Object3D) {
     3.95,
     -10.78,
   );
+  // The team's mascot poster, left of the signs, where the workbench camera
+  // sees it over the robot; the pegboard balances it on the other side.
+  place(scene, mascotPoster(6.4, redraw), -boardX, 4, -10.8);
   // Rolling tool chests, 26 in. wide and as tall as the bench, back to the
   // wall either side of it.
   const chestHigh = 36 * IN;

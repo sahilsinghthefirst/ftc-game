@@ -16,8 +16,8 @@ import {
   Box,
   CheckCircle2,
   ChevronRight,
+  CircleHelp,
   Crosshair,
-  Flag,
   Gauge,
   Grip,
   Lightbulb,
@@ -29,10 +29,10 @@ import {
   ScanLine,
   ShieldCheck,
   Target,
-  Trophy,
   Wrench,
   XCircle,
 } from 'lucide-react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { GraphicsPicker } from './graphics-picker';
 import {
@@ -45,7 +45,14 @@ import {
 } from '@/components/ui/dialog';
 import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
-import { NECTAR_TIP_VALUE, TIP_POINTS, GOAL_TIP_AT } from './match-guidance';
+import { HowToPlay, howToPlaySeen } from './how-to-play';
+import { mascot } from './mascot';
+import {
+  BASE_POINTS,
+  NECTAR_TIP_VALUE,
+  TIP_POINTS,
+  GOAL_TIP_AT,
+} from './match-guidance';
 import { Robot3DBay } from './robot-3d';
 
 const tipAt = GOAL_TIP_AT;
@@ -589,9 +596,12 @@ function Briefing({
       note: '3.75 ft/s, drives straight, holds 3 slots',
     },
   ];
+  // The slideshow opens by itself before a player's first match.
+  const [howToPlay, setHowToPlay] = useState(() => !howToPlaySeen());
 
   return (
     <main className="briefing-screen">
+      <HowToPlay open={howToPlay} onOpenChange={setHowToPlay} />
       <header className="workshop-header">
         <div className="brand-lockup">
           <div className="brand-mark">
@@ -613,8 +623,18 @@ function Briefing({
       </header>
       <div className="briefing-wrap">
         <section className="briefing-main">
-          <p className="eyebrow">MATCH 01 / DRIVER BRIEFING</p>
-          <h1>Collect. Match. Get home.</h1>
+          <div className="briefing-hero">
+            <div>
+              <p className="eyebrow">MATCH 01 / DRIVER BRIEFING</p>
+              <h1>Collect. Match. Get home.</h1>
+            </div>
+            <Image
+              className="briefing-mascot"
+              {...mascot.balloons}
+              alt=""
+              unoptimized
+            />
+          </div>
           <p className="briefing-lead">
             Your robot is ready. ARTIFACTS score nothing on their own - load the
             upward CELL of the blue HIVE until it tips for {tipPoints} points.
@@ -687,6 +707,13 @@ function Briefing({
               <strong>Handling {handling}/12</strong> · {handlingNote(handling)}
             </p>
           </div>
+          <Button
+            variant="outline"
+            className="how-to-play-button"
+            onClick={() => setHowToPlay(true)}
+          >
+            <CircleHelp aria-hidden="true" /> How to play
+          </Button>
           <Button className="start-match-button" onClick={onStart}>
             START MATCH <Play />
           </Button>
@@ -740,9 +767,16 @@ function Results({
       </header>
       <div className="results-wrap">
         <section className="result-hero">
-          <div className={`result-emblem ${won ? 'won' : ''}`}>
-            {won ? <Trophy /> : <Flag />}
-          </div>
+          <Image
+            unoptimized
+            className="result-mascot"
+            {...(won ? mascot.trophy : mascot.gear)}
+            alt={
+              won
+                ? 'The Team Geneton penguin holding a trophy'
+                : 'The Team Geneton penguin with his wrench'
+            }
+          />
           <p className="eyebrow">QUALIFIER COMPLETE</p>
           <h1>{verdict}</h1>
           <div className="final-score">
@@ -786,7 +820,7 @@ function Results({
             </div>
             <div>
               <span>BASE BONUS</span>
-              <strong>{result.baseBonus ? '+15' : '—'}</strong>
+              <strong>{result.baseBonus ? `+${BASE_POINTS}` : '—'}</strong>
             </div>
           </div>
           <div className="pit-analysis">
@@ -1580,6 +1614,10 @@ export function FieldLab() {
           <i />
           <span>Improve</span>
         </div>
+        <p className="team-credit">
+          <Image {...mascot.gear} alt="" unoptimized />
+          Made by FTC Team 26507 Geneton
+        </p>
       </footer>
     </main>
   );

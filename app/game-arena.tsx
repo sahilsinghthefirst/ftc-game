@@ -10,8 +10,10 @@ import {
   RotateCcw,
   Zap,
 } from 'lucide-react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { GraphicsPicker } from './graphics-picker';
+import { mascot } from './mascot';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
 import {
@@ -49,6 +51,7 @@ import {
 } from './robot-physics';
 import {
   BOT_LOAD_REACH,
+  BASE_POINTS,
   canCarry,
   carryCapacity,
   cellSide,
@@ -880,8 +883,8 @@ export function GameArena({
         world.finished = true;
         const baseBonus = inZone(world.player, BLUE_BASE_ZONE);
         const botBase = inZone(world.bot, RED_BASE_ZONE);
-        if (baseBonus) world.playerScore += 15;
-        if (botBase) world.botScore += 15;
+        if (baseBonus) world.playerScore += BASE_POINTS;
+        if (botBase) world.botScore += BASE_POINTS;
         finishRef.current({
           playerScore: world.playerScore,
           botScore: world.botScore,
@@ -1103,6 +1106,13 @@ export function GameArena({
           </div>
           {countdown > 0 && !sceneFailed && (
             <output className="match-countdown">
+              <Image
+                className="countdown-mascot"
+                {...mascot.gear}
+                alt=""
+                unoptimized
+                priority
+              />
               <span>Drivers, ready?</span>
               <strong>{countdown}</strong>
               <p>WASD to drive &middot; Space to collect & score</p>
