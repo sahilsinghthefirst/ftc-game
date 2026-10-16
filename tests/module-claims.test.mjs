@@ -292,7 +292,7 @@ test('reach decides where you load from, scoring decides how', () => {
   // TrueGate Indexer: "Fires on the move, never misses" / "0.45 s between
   // loads".
   assert.equal(gate.needsStop, false);
-  assert.equal(gate.miss, 0);
+  assert.equal(gate.miss, 0.04);
   assert.equal(canFire('truegate', 300), true);
   assert.ok(gate.cycle > fly.cycle && gate.cycle > burst.cycle);
 
@@ -308,9 +308,12 @@ test('reach decides where you load from, scoring decides how', () => {
   assert.equal(fly.miss, 0.25);
   assert.ok(fly.cycle < gate.cycle);
 
-  // Only the flywheel ever misses, and only the tray loads more than one.
+  // Every launcher can miss; reliable loaders trade speed for accuracy.
+  assert.ok(
+    gate.miss < tray.miss && tray.miss < burst.miss && burst.miss < fly.miss,
+  );
   for (const id of scorers) {
-    if (id !== 'flywheel') assert.equal(scoreProfile(id).miss, 0);
+    assert.ok(scoreProfile(id).miss > 0 && scoreProfile(id).miss < 1);
     if (id !== 'tiptray') assert.equal(scoreProfile(id).batch, 'one');
   }
   assert.match(byId.burst.tradeoff, /stopped/i);
@@ -340,56 +343,29 @@ test('each assist guides a different part of the match, none all of it', () => {
   for (const kind of kinds) assert.equal(assistGuides('none', kind), false);
 });
 
-test('every number printed on a card is the number the match uses', () => {
-  const says = (id, text) => {
-    const copy = `${byId[id].blurb} ${byId[id].strength} ${byId[id].tradeoff}`;
-    assert.ok(copy.includes(text), `${byId[id].name} should say "${text}"`);
-  };
-  const percent = (factor) => `${Math.round(Math.abs(1 - factor) * 100)}%`;
-  const inches = (fieldUnits) => `${Math.round(fieldUnits / INCH)} in.`;
-
-  // Top speeds, in feet a second.
-  for (const id of drives) says(id, `${driveSpeed(id) / INCH / 12} ft/s`);
-
-  // How far past the bumper each collector grabs, and how long it takes.
-  const pastBumper = (id) => collectProfile(id).radius - ROBOT_WIDTH / 2;
-  says('widewave', inches(pastBumper('widewave')));
-  says('twinflex', inches(pastBumper('twinflex')));
-  says('sorter', inches(pastBumper('sorter')));
-  says('widewave', percent(1 - collectProfile('widewave').drag));
-  says('widewave', `${collectProfile('widewave').dragFor} s`);
-  says('twinflex', `${collectProfile('twinflex').cycle} s`);
-  says('twinflex', percent(collectProfile('twinflex').topSpeed));
-  says('dualjaw', `${collectProfile('dualjaw').cycle} s per grab`);
-  says('dualjaw', percent(1 - collectProfile('dualjaw').drag));
-  says('dualjaw', `${collectProfile('dualjaw').dragFor} s`);
-  says('sorter', `${collectProfile('sorter').cycle} s`);
-
-  // Where each lift loads from, and what it does to top speed.
-  for (const id of REACH_ORDER) {
-    says(id, inches(reachProfile(id).radius));
-    if (reachProfile(id).topSpeed !== 1)
-      says(id, percent(reachProfile(id).topSpeed));
-  }
-
-  // Reloads.
-  for (const id of scorers) says(id, `${scoreProfile(id).cycle} s`);
-
-  // Auto Align's extra reach (20 field units) and its speed cost.
-  says('align', `${(20 / INCH).toFixed(1)} in.`);
-  says(
-    'align',
-    percent(topSpeed({ ...base, assist: 'align' }) / topSpeed(base)),
-  );
-
-  // Any Handling a card quotes is the part's own Handling trait.
+test('kid-friendly cards preserve meaningful tradeoffs without technical shorthand', () => {
   for (const part of modules) {
-    const quoted = `${part.strength} ${part.tradeoff}`.match(
-      /Handling ([+-]\d+)/,
-    );
-    if (quoted)
-      assert.equal(Number(quoted[1]), part.traits.handling, part.name);
+    for (const text of [part.blurb, part.strength, part.tradeoff]) {
+      assert.ok(text.length <= 70, part.name);
+      assert.doesNotMatch(text, /ft\/s|strafe|ARTIFACT|Handling [+-]|\d+%/);
+    }
   }
+  assert.match(byId.orbit.strength, /fastest/i);
+  assert.equal(driveSpeed('orbit'), Math.max(...drives.map(driveSpeed)));
+  assert.match(byId.twinflex.strength, /fastest/i);
+  assert.equal(
+    collectProfile('twinflex').cycle,
+    Math.min(...inCategory('collect').map((m) => collectProfile(m.id).cycle)),
+  );
+  assert.match(byId.truegate.strength, /most accurate/i);
+  assert.equal(
+    scoreProfile('truegate').miss,
+    Math.min(...scorers.map((id) => scoreProfile(id).miss)),
+  );
+  assert.match(byId.flywheel.tradeoff, /one shot in four/i);
+  assert.equal(scoreProfile('flywheel').miss, 1 / 4);
+  assert.match(byId.cascade.strength, /farthest/i);
+  assert.equal(scoreReach('cascade'), Math.max(...REACH_ORDER.map(scoreReach)));
 });
 
 test('no card still describes the old ruleset', () => {

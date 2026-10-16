@@ -16,6 +16,7 @@ import { GraphicsPicker } from './graphics-picker';
 import { mascot } from './mascot';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
+import { createBotStyle } from './bot-style';
 import {
   BLUE_BASE_ZONE,
   BOT_START,
@@ -67,6 +68,7 @@ import {
   intakeTurnRate,
   scoreReach,
   scoreProfile,
+  shotMisses,
   canFire,
   shoveResist,
   strafeFactor,
@@ -174,6 +176,7 @@ export type World = {
   scored: number;
   hives: Record<Alliance, HiveState>;
   botThink: number;
+  botStyle: ReturnType<typeof createBotStyle>;
   botTarget: { x: number; y: number };
   botIntent: string;
   finished: boolean;
@@ -277,6 +280,7 @@ function createWorld(): World {
     scored: 0,
     hives: { blue: hive(), red: hive() },
     botThink: 0,
+    botStyle: createBotStyle(),
     botTarget: { x: FIELD_CENTER, y: FIELD_CENTER },
     botIntent: 'Scanning the field',
     finished: false,
@@ -475,7 +479,7 @@ export function GameArena({
     botScore: 0,
     carried: 0,
     capacity: carryCapacity(selected.carry),
-    prompt: 'Drive to an ARTIFACT',
+    prompt: 'Drive to a ball',
     botIntent: 'Scanning the field',
     finalSeconds: false,
     goalLoad: CELL_PRELOAD * NECTAR_TIP_VALUE,
@@ -622,11 +626,15 @@ export function GameArena({
       const keys = keysRef.current;
       const touch = touchRef.current;
       let ix =
-        (keys.has('d') || keys.has('arrowright') || touch.right ? 1 : 0) -
-        (keys.has('a') || keys.has('arrowleft') || touch.left ? 1 : 0);
+        (keys.has('d') || touch.right ? 1 : 0) -
+        (keys.has('a') || touch.left ? 1 : 0);
       let iy =
-        (keys.has('s') || keys.has('arrowdown') || touch.down ? 1 : 0) -
-        (keys.has('w') || keys.has('arrowup') || touch.up ? 1 : 0);
+        (keys.has('s') || touch.down ? 1 : 0) -
+        (keys.has('w') || touch.up ? 1 : 0);
+      scene.orbitCamera(
+        (Number(keys.has('arrowright')) - Number(keys.has('arrowleft'))) * dt,
+        (Number(keys.has('arrowup')) - Number(keys.has('arrowdown'))) * dt,
+      );
       const inputLength = Math.hypot(ix, iy);
       if (inputLength > 0) {
         ix /= inputLength;
@@ -686,7 +694,7 @@ export function GameArena({
             const made: PieceColor[] = [];
             const mouth = cellMouth('blue', blueHive.up);
             loaded.forEach((color, index) => {
-              if (Math.random() < scoreMiss) {
+              if (shotMisses(scoreMiss)) {
                 bounceOut(world, 'player', color);
                 emitBurst(world, mouth.x, mouth.y, '#f6d68d', 'MISS');
                 return;
@@ -742,8 +750,8 @@ export function GameArena({
       if (world.botThink <= 0) {
         const thinkRate =
           difficulty === 'rookie' ? 0.48 : difficulty === 'rival' ? 0.25 : 0.12;
-        world.botThink = thinkRate;
-        if (world.time <= 10) {
+        world.botThink = thinkRate * world.botStyle.thinking;
+        if (world.time <= world.botStyle.homeAt) {
           world.botTarget = RED_BASE;
           world.botIntent = 'Returning to BASE';
         } else if (
@@ -760,7 +768,13 @@ export function GameArena({
         } else {
           const targetPiece = world.pieces
             .filter((piece) => pickable(piece) && mayCollect(piece, 'red'))
-            .sort((a, b) => distance(bot, a) - distance(bot, b))[0];
+            .sort(
+              (a, b) =>
+                distance(bot, a) *
+                  (a.color === 'P' ? world.botStyle.nectar : 1) -
+                distance(bot, b) *
+                  (b.color === 'P' ? world.botStyle.nectar : 1),
+            )[0];
           if (targetPiece) {
             world.botTarget = targetPiece;
             world.botIntent = `Collecting ${targetPiece.color === 'P' ? 'NECTAR' : 'POLLEN'}`;
@@ -772,7 +786,8 @@ export function GameArena({
       // quick, well-driven one, all a little slower than the fastest bases.
       const botSpeed =
         (difficulty === 'rookie' ? 31 : difficulty === 'rival' ? 38 : 45) *
-        INCH;
+        INCH *
+        world.botStyle.speed;
       // Scout-7 gets a handling rating of its own, so a tougher rival also
       // corners and stops better instead of only driving faster.
       const botAccel =
@@ -810,18 +825,32 @@ export function GameArena({
           bot.carried.length > 0
         ) {
           const color = bot.carried.shift()!;
-          redHive.load += tipValue(color);
-          bot.cooldown = difficulty === 'rookie' ? 0.72 : 0.45;
-          const mouth = cellMouth('red', redHive.up);
-          emitBurst(
-            world,
-            mouth.x - 30,
-            mouth.y,
-            ink(color, 'red'),
-            `${redHive.load}/${tipAt}`,
+          const missed = shotMisses(
+            difficulty === 'rookie'
+              ? 0.22
+              : difficulty === 'rival'
+                ? 0.14
+                : 0.08,
           );
-          storeInCell(world, 'bot', [color]);
-          if (goalTips(redHive.load)) tipHive(world, 'bot');
+          bot.cooldown =
+            (difficulty === 'rookie' ? 0.72 : 0.45) *
+            (0.8 + Math.random() * 0.4);
+          const mouth = cellMouth('red', redHive.up);
+          if (missed) {
+            bounceOut(world, 'bot', color);
+            emitBurst(world, mouth.x, mouth.y, ink(color, 'red'), 'MISS');
+          } else {
+            redHive.load += tipValue(color);
+            emitBurst(
+              world,
+              mouth.x - 30,
+              mouth.y,
+              ink(color, 'red'),
+              `${redHive.load}/${tipAt}`,
+            );
+            storeInCell(world, 'bot', [color]);
+            if (goalTips(redHive.load)) tipHive(world, 'bot');
+          }
         } else if (usedSpace(bot.carried, 'bot') < botCapacity) {
           const piece = world.pieces
             .filter((item) => pickable(item) && mayCollect(item, 'red'))
@@ -929,10 +958,10 @@ export function GameArena({
         const target = playerTarget(world, selected);
         let prompt =
           target?.kind === 'goal'
-            ? `Load the ${cellSide(up)} CELL of the blue HIVE`
+            ? `Shoot into the ${cellSide(up)} blue basket`
             : target
-              ? 'Drive to an ARTIFACT'
-              : 'No ARTIFACTS left on the field';
+              ? 'Drive to a ball'
+              : 'No balls left on the field';
         if (nearGoal && target?.kind === 'goal')
           prompt = canFire(
             selected.score,
@@ -1079,7 +1108,7 @@ export function GameArena({
           <canvas
             ref={canvasRef}
             tabIndex={0}
-            aria-label="3D competition field. Drive with WASD or arrows. Hold Space to collect and score. Press C to change camera, Escape to pause."
+            aria-label="3D competition field. Drive with WASD. Arrow keys turn and tilt the camera. Hold Space to collect and shoot. Press C to change camera, Escape to pause."
             onPointerDown={() =>
               canvasRef.current?.focus({ preventScroll: true })
             }
@@ -1099,6 +1128,38 @@ export function GameArena({
               </button>
             ))}
             <kbd>C</kbd>
+            {(
+              [
+                ['Look left', -0.25, 0, ArrowLeft],
+                ['Look right', 0.25, 0, ArrowRight],
+                ['Look down', 0, -0.2, ArrowDown],
+                ['Look up', 0, 0.2, ArrowUp],
+              ] as const
+            ).map(([label, yaw, lift, Icon]) => (
+              <button
+                key={label}
+                aria-label={label}
+                title={label}
+                disabled={paused}
+                onClick={() => {
+                  sceneRef.current?.orbitCamera(yaw, lift);
+                  canvasRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                <Icon size={16} />
+              </button>
+            ))}
+            <button
+              aria-label="Reset camera"
+              title="Reset camera"
+              disabled={paused}
+              onClick={() => {
+                sceneRef.current?.setCamera(cameraMode);
+                canvasRef.current?.focus({ preventScroll: true });
+              }}
+            >
+              <RotateCcw size={16} />
+            </button>
           </div>
           <div className="arena-event-label">
             <b>FIELD / 01</b>
@@ -1169,7 +1230,7 @@ export function GameArena({
             </div>
             <div className="key-copy">
               <strong>DRIVE</strong>
-              <span>WASD or arrow keys</span>
+              <span>WASD to drive · Arrows to look</span>
             </div>
             <kbd className="space-key">SPACE</kbd>
             <div className="key-copy">
@@ -1287,10 +1348,8 @@ export function GameArena({
           <div className="match-tip">
             <strong>PIT TIP</strong>
             <p>
-              ARTIFACTS score nothing alone. Load the HIVE&apos;s upward CELL to{' '}
-              {tipAt} and it tips for {TIP_POINTS}, pouring them out on that
-              side. Then its other CELL is up - go round and load it from the
-              other side.
+              Fill the raised basket to {tipAt} for {TIP_POINTS} points. Then
+              drive around to the other side. Blue balls fill faster!
             </p>
           </div>
         </aside>

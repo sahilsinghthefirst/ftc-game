@@ -1,0 +1,215 @@
+.results-screen {
+  background:
+    radial-gradient(circle at 12% 25%, #fff0b5 0, transparent 32%),
+    radial-gradient(circle at 90% 70%, #c8e9ff 0, transparent 38%), #f5fbff;
+  color: #17354d;
+}
+.results-screen .results-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+  gap: 28px;
+}
+.results-screen .result-hero {
+  background: #fff;
+  border: 2px solid #c7dff3;
+  border-radius: 28px;
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 8px 0 #dcecf7;
+}
+.results-screen .result-mascot {
+  position: static;
+  display: block;
+  width: 120px;
+  height: 140px;
+  object-fit: contain;
+  margin: 0 auto 12px;
+  transform: none;
+}
+.results-screen .result-hero {
+  align-items: center;
+}
+.results-screen .result-data {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  gap: 0;
+}
+.results-screen .final-score > div {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.arena-camera-switch {
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+}
+.arena-camera-switch button {
+  min-width: 32px;
+  min-height: 32px;
+}
+.results-screen .result-hero h1 {
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.1;
+  margin: 10px 0 24px;
+  max-width: none;
+}
+.results-screen .final-score {
+  justify-content: center;
+  gap: 24px;
+  margin: 20px 0;
+}
+.results-screen .final-score > div {
+  background: #e7f2ff;
+  border-radius: 20px;
+  padding: 16px 24px;
+  min-width: 110px;
+}
+.results-screen .final-score > div:last-child {
+  background: #ffe7df;
+}
+.results-screen .final-score strong {
+  font-size: clamp(42px, 6vw, 64px);
+  color: #174f8f;
+}
+.results-screen .result-sub {
+  font-size: 17px;
+  line-height: 1.5;
+  max-width: 34ch;
+  margin: 0 auto 24px;
+}
+.results-screen .result-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.results-screen .result-actions button {
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 16px;
+}
+.results-screen .metric-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border: 0;
+}
+.results-screen .metric-row > div {
+  border: 0;
+  border-radius: 18px;
+  background: #fff0b5;
+  padding: 18px;
+}
+.results-screen .metric-row > div:nth-child(2) {
+  background: #dceeff;
+}
+.results-screen .metric-row > div:nth-child(3) {
+  background: #d7f2df;
+}
+.results-screen .metric-row > div:nth-child(4) {
+  background: #ffe1d6;
+}
+.results-screen .metric-row span {
+  color: #29465c;
+  font-size: 12px;
+}
+.results-screen .metric-row strong {
+  font-size: 32px;
+  color: #17354d;
+}
+.results-screen .pit-analysis,
+.results-screen .first-connection {
+  background: #fff;
+  border: 1px solid #d2e4ef;
+  border-radius: 20px;
+  padding: 22px;
+  margin-top: 18px;
+}
+.results-screen .analysis-heading h2 {
+  font-size: 21px;
+  line-height: 1.3;
+}
+.results-screen .analysis-notes {
+  display: grid;
+  gap: 16px;
+}
+.results-screen .analysis-notes p,
+.results-screen .first-connection p {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.results-screen .analysis-notes span {
+  color: #3567a4;
+}
+.results-screen .first-loop {
+  color: #3567a4;
+}
+.ball-demo {
+  border: 2px solid #c6ddf4;
+  border-radius: 18px;
+  background: #f1f8ff;
+  padding: 16px;
+  margin-top: 16px;
+}
+.ball-demo-key,
+.ball-demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.ball-demo-key span {
+  font-size: 14px;
+  font-weight: 700;
+}
+.ball-demo progress {
+  width: 100%;
+  height: 22px;
+  accent-color: #2872ce;
+  margin-top: 12px;
+}
+.ball-demo p {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 10px 0;
+}
+.ball-demo label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-top: 14px;
+}
+.ball-demo input {
+  width: 20px;
+  height: 20px;
+  accent-color: #2872ce;
+}
+.how-to-play {
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+.how-to-play:has(.ball-demo) .how-to-play-art {
+  max-height: 100px;
+}
+@media (max-width: 700px) {
+  .results-screen .results-wrap {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px 32px;
+  }
+  .results-screen .result-hero {
+    padding: 22px 16px;
+  }
+  .results-screen .result-mascot {
+    width: 90px;
+    height: 105px;
+  }
+  .results-screen .final-score > div {
+    min-width: 90px;
+    padding: 12px;
+  }
+  .results-screen .result-actions button {
+    flex: 1 1 150px;
+  }
+}

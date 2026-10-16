@@ -147,9 +147,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Comet Mecanum',
     code: 'DRV-01',
-    blurb: 'Mecanum rollers drive it sideways at full power.',
-    strength: 'Full-speed strafe in any direction',
-    tradeoff: '4.5 ft/s, slower than omni or 6WD',
+    blurb: 'Roll forward, back, or sideways.',
+    strength: 'Moves sideways easily',
+    tradeoff: 'Not the fastest wheels',
     traits: { speed: 5, handling: 0, control: 2, collect: 0, score: 0 },
     weight: 3,
     power: 5,
@@ -160,9 +160,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Trailblazer 6WD',
     code: 'DRV-02',
-    blurb: 'Six wheels: quick in a straight line and hard to push.',
-    strength: '5.5 ft/s, and the hardest to shove',
-    tradeoff: 'Slowest turning, almost no strafe',
+    blurb: 'Six wheels for fast, straight runs.',
+    strength: 'Fast and hard to push',
+    tradeoff: 'Wide turns; barely moves sideways',
     traits: { speed: 5, handling: 3, control: 2, collect: 0, score: 0 },
     weight: 5,
     power: 3,
@@ -173,9 +173,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Orbit Omni',
     code: 'DRV-03',
-    blurb: 'Light omni wheels with the highest top speed.',
-    strength: '6 ft/s, the fastest base',
-    tradeoff: 'Handling -6, and the easiest to shove',
+    blurb: 'Light wheels built for speed.',
+    strength: 'The fastest wheels',
+    tradeoff: 'Slides more and is easy to push',
     traits: { speed: 6, handling: -6, control: 0, collect: 0, score: 0 },
     weight: 1,
     power: 3,
@@ -186,9 +186,9 @@ const modules: Module[] = [
     category: 'drive',
     name: 'Anchor Traction',
     code: 'DRV-04',
-    blurb: 'Grippy traction wheels that pivot in place.',
-    strength: 'Fastest turning, and Handling +5',
-    tradeoff: '3 ft/s, the slowest base',
+    blurb: 'Grippy wheels for tight turns.',
+    strength: 'Turns quickly and stops well',
+    tradeoff: 'The slowest wheels',
     traits: { speed: 0, handling: 5, control: 3, collect: 0, score: 0 },
     weight: 3,
     power: 2,
@@ -199,9 +199,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'WideWave Roller',
     code: 'INT-01',
-    blurb: 'A light, wide roller that grabs from well in front.',
-    strength: 'Grabs 10 in. past the bumper',
-    tradeoff: '30% speed for 0.7 s on each grab',
+    blurb: 'A wide roller that scoops up balls.',
+    strength: 'Picks up balls from farther away',
+    tradeoff: 'Slows down a lot while collecting',
     traits: { speed: 3, handling: 1, control: -1, collect: 1, score: 0 },
     weight: 1,
     power: 3,
@@ -212,9 +212,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'TwinFlex Intake',
     code: 'INT-02',
-    blurb: 'Heavy twin rollers that pull an ARTIFACT in on contact.',
-    strength: 'Ready again in 0.14 s, the fastest',
-    tradeoff: '16% slower top speed, 3 in. reach',
+    blurb: 'Two rollers pull balls in quickly.',
+    strength: 'The fastest collector',
+    tradeoff: 'Heavy; needs to get close',
     traits: { speed: -4, handling: -1, control: 0, collect: 5, score: 0 },
     weight: 6,
     power: 5,
@@ -225,9 +225,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'DualJaw Grabber',
     code: 'INT-03',
-    blurb: 'Two jaws that close on a pair of ARTIFACTS at once.',
-    strength: 'Takes two ARTIFACTS in one grab',
-    tradeoff: '1.6 s per grab, at 40% speed for 1 s',
+    blurb: 'Two claws grab balls together.',
+    strength: 'Can grab two balls at once',
+    tradeoff: 'Each grab takes a while',
     traits: { speed: -1, handling: -1, control: 1, collect: 2, score: 0 },
     weight: 4,
     power: 4,
@@ -238,9 +238,9 @@ const modules: Module[] = [
     category: 'collect',
     name: 'NectarSort Funnel',
     code: 'INT-04',
-    blurb: 'A funnel that only takes blue NECTAR, worth 1.5 each.',
-    strength: 'Grabs 7 in. out, ready again in 0.3 s',
-    tradeoff: 'Cannot pick up POLLEN at all',
+    blurb: 'Only collects blue balls.',
+    strength: 'Blue balls fill the goal faster',
+    tradeoff: 'Cannot collect yellow balls',
     traits: { speed: 1, handling: 0, control: 0, collect: 3, score: 2 },
     weight: 2,
     power: 2,
@@ -251,8 +251,8 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Low Rider Hopper',
     code: 'STR-01',
-    blurb: 'An open bin wide enough for big NECTAR.',
-    strength: 'NECTAR fills one slot, not two',
+    blurb: 'A wide bin for big blue balls.',
+    strength: 'Each blue ball uses just one slot',
     tradeoff: 'Only four slots',
     traits: { speed: 1, handling: 2, control: 1, collect: 0, score: 0 },
     weight: 2,
@@ -264,9 +264,9 @@ const modules: Module[] = [
     category: 'carry',
     name: 'StackPack Magazine',
     code: 'STR-02',
-    blurb: 'A tall magazine with six slots.',
-    strength: 'Holds six POLLEN or three NECTAR',
-    tradeoff: 'Handling -3: slower starts and stops',
+    blurb: 'A tall bin with six slots.',
+    strength: 'Holds six yellow or three blue balls',
+    tradeoff: 'Slower starts and stops',
     traits: { speed: -2, handling: -3, control: -2, collect: 1, score: 0 },
     weight: 5,
     power: 1,
@@ -277,9 +277,9 @@ const modules: Module[] = [
     category: 'carry',
     name: 'Pocket Indexer',
     code: 'STR-04',
-    blurb: 'Four light slots inside the frame.',
-    strength: 'Handling +3: quicker starts and stops',
-    tradeoff: 'Four slots, and NECTAR fills two each',
+    blurb: 'A small, light bin with four slots.',
+    strength: 'Quicker starts and stops',
+    tradeoff: 'Four slots; blue balls use two each',
     traits: { speed: 2, handling: 3, control: 0, collect: 0, score: 1 },
     weight: 1,
     power: 2,
@@ -290,9 +290,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Arc Pivot Arm',
     code: 'RCH-02',
-    blurb: 'A light arm that swings up to the CELL.',
-    strength: '12% faster top speed',
-    tradeoff: 'Loads only within 17 in. of the CELL',
+    blurb: 'A light arm that lifts balls to the goal.',
+    strength: 'Keeps your robot speedy',
+    tradeoff: 'Must get very close to shoot',
     traits: { speed: 3, handling: 1, control: 0, collect: 0, score: 0 },
     weight: 2,
     power: 3,
@@ -303,9 +303,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Compact Elevator',
     code: 'RCH-03',
-    blurb: 'A lift that rises straight up to the CELL.',
-    strength: 'Loads from 22 in., no speed change',
-    tradeoff: 'Shorter reach than turret or slides',
+    blurb: 'A lift that goes straight up.',
+    strength: 'Good reach without slowing you down',
+    tradeoff: 'Cannot shoot from far away',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 3,
     power: 3,
@@ -316,9 +316,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Orbit Turret',
     code: 'RCH-04',
-    blurb: 'A turret that swings the scorer over to the CELL.',
-    strength: 'Loads from 28 in. away',
-    tradeoff: '10% slower top speed, Handling -2',
+    blurb: 'A turning arm that reaches the goal.',
+    strength: 'Shoot from farther away',
+    tradeoff: 'Makes driving a little slower',
     traits: { speed: -2, handling: -2, control: 1, collect: 0, score: 2 },
     weight: 4,
     power: 3,
@@ -329,9 +329,9 @@ const modules: Module[] = [
     category: 'reach',
     name: 'Cascade Slides',
     code: 'RCH-01',
-    blurb: 'Stacked slides that reach the CELL from far back.',
-    strength: 'Loads from 36 in., the longest reach',
-    tradeoff: '20% slower top speed, Handling -3',
+    blurb: 'A long lift that stretches to the goal.',
+    strength: 'Shoot from the farthest away',
+    tradeoff: 'Heavy and slower to drive',
     traits: { speed: -4, handling: -3, control: -2, collect: 0, score: 3 },
     weight: 5,
     power: 4,
@@ -342,9 +342,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'Burst Feeder',
     code: 'SCR-01',
-    blurb: 'A feeder that loads ARTIFACTS back to back.',
-    strength: 'One every 0.15 s, the fastest',
-    tradeoff: 'Only fires with the robot stopped',
+    blurb: 'Sends balls into the goal quickly.',
+    strength: 'The fastest shooter',
+    tradeoff: 'Must be stopped to shoot; sometimes misses',
     traits: { speed: 0, handling: 0, control: 0, collect: 0, score: 3 },
     weight: 2,
     power: 5,
@@ -355,9 +355,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'TrueGate Indexer',
     code: 'SCR-02',
-    blurb: 'Loads exactly one ARTIFACT per press.',
-    strength: 'Fires on the move, never misses',
-    tradeoff: '0.45 s between loads',
+    blurb: 'Hold ACTION to shoot one ball at a time.',
+    strength: 'The most accurate shooter',
+    tradeoff: 'Shoots slowly; can still miss',
     traits: { speed: 0, handling: 1, control: 1, collect: 0, score: 1 },
     weight: 2,
     power: 2,
@@ -368,9 +368,9 @@ const modules: Module[] = [
     category: 'score',
     name: 'TipTray',
     code: 'SCR-03',
-    blurb: 'Tips everything in storage into the CELL at once.',
-    strength: 'Empties all storage in one load',
-    tradeoff: 'Must stop, then 1.1 s to reset',
+    blurb: 'Dumps all your balls into the goal.',
+    strength: 'Empties your bin all at once',
+    tradeoff: 'Must stop; a few balls may bounce out',
     traits: { speed: 0, handling: 1, control: 0, collect: 0, score: 2 },
     weight: 2,
     power: 2,
@@ -381,8 +381,8 @@ const modules: Module[] = [
     category: 'score',
     name: 'Vector Flywheel',
     code: 'SCR-04',
-    blurb: 'Launches ARTIFACTS into the CELL on the move.',
-    strength: 'One every 0.25 s, even while driving',
+    blurb: 'Shoots balls while you drive.',
+    strength: 'Fast shots without stopping',
     tradeoff: 'One shot in four bounces out',
     traits: { speed: 1, handling: -2, control: -2, collect: 0, score: 2 },
     weight: 3,
@@ -394,9 +394,9 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Range Finder',
     code: 'SNS-02',
-    blurb: 'Marks where you can load from, and lights up once you are there.',
-    strength: 'Shows your exact loading area',
-    tradeoff: 'No route to ARTIFACTS or BASE',
+    blurb: 'Makes the shooting zone glow brighter when ready.',
+    strength: 'An extra-bright ready signal',
+    tradeoff: 'Does not show a path to balls',
     traits: { speed: 0, handling: 0, control: 1, collect: 0, score: 1 },
     weight: 1,
     power: 1,
@@ -407,9 +407,9 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Auto Align',
     code: 'SNS-03',
-    blurb: 'Points the way to the upward CELL.',
-    strength: 'Collects and loads from 2.4 in. further',
-    tradeoff: '12% slower top speed',
+    blurb: 'Shows the way to the raised basket.',
+    strength: 'A little extra reach for balls and goals',
+    tradeoff: 'Makes driving a little slower',
     traits: { speed: -3, handling: 1, control: 3, collect: 0, score: 1 },
     weight: 1,
     power: 2,
@@ -420,9 +420,9 @@ const modules: Module[] = [
     category: 'assist',
     name: 'Pathfinder',
     code: 'SNS-04',
-    blurb: 'Draws the route to the next ARTIFACT, and home to BASE at the end.',
-    strength: 'Handling +3, and no speed cost',
-    tradeoff: 'No guide to the HIVE while carrying',
+    blurb: 'Shows a path to balls, then home at the end.',
+    strength: 'Helps you find your next ball',
+    tradeoff: 'Does not guide you to the goal',
     traits: { speed: 1, handling: 3, control: 1, collect: 0, score: 0 },
     weight: 1,
     power: 2,
@@ -636,10 +636,9 @@ function Briefing({
             />
           </div>
           <p className="briefing-lead">
-            Your robot is ready. ARTIFACTS score nothing on their own - load the
-            upward CELL of the blue HIVE until it tips for {tipPoints} points.
-            It pours out on that side, and the other CELL swings up, so go round
-            and load it next. Reach BASE before the horn.
+            Collect balls. Fill the raised blue basket to tip the goal for{' '}
+            {tipPoints} points. Then try the other side! Park in your blue base
+            before time runs out.
           </p>
           <div className="mission-strip">
             <div>
@@ -651,24 +650,26 @@ function Briefing({
             <div>
               <span>2</span>
               <strong>TIP</strong>
-              <p>Load {tipAt} into the up CELL</p>
+              <p>Fill the raised basket to {tipAt}</p>
             </div>
             <ChevronRight />
             <div>
               <span>3</span>
               <strong>RETURN</strong>
-              <p>Get to BASE in the final 10</p>
+              <p>Go home in the last 10 seconds</p>
             </div>
           </div>
           <div className="tip-brief">
             <div>
               <p className="eyebrow">TIPPING THE HIVE</p>
-              <strong>NECTAR {nectarValue} · POLLEN 1</strong>
+              <strong>Blue +{nectarValue} · Yellow +1</strong>
             </div>
             <p>
               <b>{tipPoints}</b> points at {tipAt}
               <br />
-              <span>only blue NECTAR is yours · it fills two slots</span>
+              <span>
+                Blue balls fill faster · red balls belong to your rival
+              </span>
             </p>
           </div>
         </section>
@@ -718,7 +719,7 @@ function Briefing({
             START MATCH <Play />
           </Button>
           <p className="start-note">
-            60 seconds · Pause anytime · WASD or arrows
+            60 seconds · WASD to drive · Arrow keys to look
           </p>
         </aside>
       </div>
@@ -739,13 +740,11 @@ function Results({
 }) {
   const won = result.playerScore > result.botScore;
   const tied = result.playerScore === result.botScore;
-  const collector = modules.find((module) => module.id === selected.collect)!;
-  const carrier = modules.find((module) => module.id === selected.carry)!;
   const verdict = tied
-    ? 'Photo finish.'
+    ? 'A tie! Try a rematch?'
     : won
-      ? 'That build works.'
-      : 'Good data. Back to the pit.';
+      ? 'You did it!'
+      : 'Ready for another go?';
   return (
     <main className="results-screen">
       <header className="workshop-header">
@@ -777,7 +776,7 @@ function Results({
                 : 'The Team Geneton penguin with his wrench'
             }
           />
-          <p className="eyebrow">QUALIFIER COMPLETE</p>
+          <p className="eyebrow">NICE DRIVING!</p>
           <h1>{verdict}</h1>
           <div className="final-score">
             <div>
@@ -792,15 +791,15 @@ function Results({
           </div>
           <p className="result-sub">
             {won
-              ? 'Your choices turned into a winning strategy.'
-              : 'FTC teams rarely get the perfect robot on the first try. The next change is the interesting part.'}
+              ? 'Your robot won this round. Can you beat your score?'
+              : 'Try again, or swap a part and see what happens!'}
           </p>
           <div className="result-actions">
             <Button variant="outline" onClick={onRematch}>
-              <RotateCcw /> Rematch
+              <RotateCcw /> Play again
             </Button>
             <Button onClick={onWorkshop}>
-              Make changes <Wrench />
+              Change robot <Wrench />
             </Button>
           </div>
         </section>
@@ -811,7 +810,7 @@ function Results({
               <strong>{result.collected}</strong>
             </div>
             <div>
-              <span>SCORED</span>
+              <span>BALLS IN</span>
               <strong>{result.scored}</strong>
             </div>
             <div>
@@ -827,22 +826,25 @@ function Results({
             <div className="analysis-heading">
               <Lightbulb />
               <div>
-                <p className="eyebrow">PIT ANALYSIS</p>
-                <h2>Your robot left clues.</h2>
+                <p className="eyebrow">TRY THIS NEXT</p>
+                <h2>One small change. A new adventure.</h2>
               </div>
             </div>
             <div className="analysis-notes">
               <div>
-                <span>WORKED</span>
+                <span>YOUR NEXT CHALLENGE</span>
                 <p>
-                  <strong>{collector.name}</strong>: {collector.strength}.
+                  {result.tips > 0
+                    ? 'You tipped the goal! Try mixing blue and yellow balls on your next run.'
+                    : 'Follow the blue shooting zone. Stop inside it and hold ACTION to fill the basket.'}
                 </p>
               </div>
               <div>
-                <span>TRY NEXT</span>
+                <span>QUICK TIP</span>
                 <p>
-                  <strong>{carrier.name}</strong>: {carrier.tradeoff}. Test
-                  another Carry module and compare.
+                  {result.baseBonus
+                    ? 'You made it home! Try a new shooter and compare how many balls land.'
+                    : `Save the last 10 seconds to drive home for ${BASE_POINTS} bonus points.`}
                 </p>
               </div>
             </div>
@@ -852,11 +854,11 @@ function Results({
               BUILD <i>→</i> TEST <i>→</i> IMPROVE
             </span>
             <div>
-              <p className="eyebrow">THIS IS THE FTC LOOP</p>
+              <p className="eyebrow">FIRST TECH CHALLENGE</p>
               <h2>Real teams learn the same way.</h2>
               <p>
-                Every match gives engineers evidence. They bring it back to the
-                pit, change the robot, and try again—together.
+                Build, play, improve! Our FTC team tries new ideas together,
+                just like you.
               </p>
             </div>
           </div>

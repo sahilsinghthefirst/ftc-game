@@ -588,7 +588,10 @@ function arenaRoom(scene: THREE.Object3D) {
   }
   // The HIVE frame in the middle of the field; the HIVES that tip on it are
   // added separately, since they move.
-  hiveFrame(scene, MAT_TOP, {
+  const frame = new THREE.Group();
+  frame.name = 'hive-frame';
+  scene.add(frame);
+  hiveFrame(frame, MAT_TOP, {
     blue: (HIVE_X.blue - FIELD_CENTER) * SCALE,
     red: (HIVE_X.red - FIELD_CENTER) * SCALE,
   });
@@ -893,7 +896,8 @@ export function createArenaScene(
   const venue = new THREE.Group();
   arenaRoom(venue);
   quietFarShadows(venue);
-  mergeStaticMeshes(venue, []);
+  // Keep the frame in its own batch so occlusion fading never fades the floor.
+  mergeStaticMeshes(venue, [venue.getObjectByName('hive-frame')!]);
   scene.add(venue);
   // The hall is a true-scale room some 130 feet across, so the haze only
   // starts well past the field and the far wall is still drawn.
@@ -909,6 +913,8 @@ export function createArenaScene(
   // "up" on the stick always drives away from the camera.
   const cameraTarget = new THREE.Vector3();
   let mode: CameraMode = 'arena';
+  let cameraYaw = 0;
+  let cameraLift = 1;
   let width = 1,
     height = 1;
   const lookAt = new THREE.Vector3(0, 0, 0);
@@ -961,12 +967,15 @@ export function createArenaScene(
   // Range Finder's mark: where the robot can load the upward CELL from - the
   // part of its reach round the mouth that is out in front of the HIVE. Dim
   // until the robot is inside it, then bright; it moves when the HIVE tips.
-  const loadRange = scoreReach(selected.reach);
+  const loadRange =
+    scoreReach(selected.reach) + (selected.assist === 'align' ? 20 : 0);
   const rangeRing = new THREE.Group();
   const rangeMaterial = new THREE.MeshBasicMaterial({
     color: blue,
     toneMapped: false,
     side: THREE.DoubleSide,
+    depthWrite: false,
+    depthTest: false,
   });
   {
     // Built for the near CELL; the far one is the same turned round.
@@ -994,7 +1003,10 @@ export function createArenaScene(
     edge.position.z = (LOAD_FRONT - CELL_MOUTH) * SCALE;
     rangeRing.add(edge);
   }
-  rangeRing.visible = selected.assist === 'range';
+  rangeRing.visible = true;
+  rangeRing.traverse((object) => {
+    object.renderOrder = 10;
+  });
   scene.add(rangeRing);
   const rangeColor = new THREE.Color(blue);
   const placeRange = (end: CellEnd) => {
@@ -1025,8 +1037,11 @@ export function createArenaScene(
   // fade to see-through then. Their materials are left transparent all the
   // time, so fading never makes the graphics chip rebuild a shader mid-match.
   const hiveLooks: { material: THREE.Material; opacity: number }[] = [];
-  for (const hive of Object.values(hives))
-    hive.root.traverse((object) => {
+  for (const root of [
+    ...Object.values(hives).map((hive) => hive.root),
+    scene.getObjectByName('hive-frame')!,
+  ])
+    root.traverse((object) => {
       const material = (object as THREE.Mesh).material;
       if (!material || Array.isArray(material)) return;
       if (hiveLooks.some((look) => look.material === material)) return;
@@ -1040,7 +1055,7 @@ export function createArenaScene(
   const hiveBox = new THREE.Box3(
     new THREE.Vector3(
       -FRAME_HALF_WIDTH * SCALE,
-      MAT_TOP + 30 * IN,
+      MAT_TOP,
       -(SPILL_MOUTH * SCALE + 3 * IN),
     ),
     new THREE.Vector3(
@@ -1050,6 +1065,8 @@ export function createArenaScene(
     ),
   );
   const sightLine = new THREE.Ray();
+  // Include the robot's width so partial occlusion also opens up the view.
+  hiveBox.expandByScalar(ROBOT_WIDTH * SCALE * 0.4);
   const sightHit = new THREE.Vector3();
   const robotEye = new THREE.Vector3();
   const cellOf = (piece: World['pieces'][number]) =>
@@ -1096,7 +1113,7 @@ export function createArenaScene(
   // of seams per colour, however many balls are out. Only a ball in flight
   // (into a robot or a CELL) gets a mesh of its own.
   const parts = getBallParts();
-  const makeField = (look: BallLook) => {
+  const makeField = (look: BallLook, stored = false) => {
     const capacity = Math.max(
       1,
       world.pieces.filter(
@@ -1105,7 +1122,7 @@ export function createArenaScene(
     );
     const body = new THREE.InstancedMesh(
       parts.sphere,
-      parts.body[look],
+      stored ? parts.body[look].clone() : parts.body[look],
       capacity,
     );
     body.customDepthMaterial = parts.shadow;
@@ -1113,11 +1130,20 @@ export function createArenaScene(
     body.receiveShadow = true;
     const seams = new THREE.InstancedMesh(
       parts.seam,
-      parts.seamColor[look],
+      stored ? parts.seamColor[look].clone() : parts.seamColor[look],
       capacity,
     );
     // The balls move every frame, so the precomputed bounds would be stale.
     body.frustumCulled = seams.frustumCulled = false;
+    if (stored) {
+      for (const mesh of [body, seams]) {
+        mesh.material.transparent = true;
+        hiveLooks.push({
+          material: mesh.material,
+          opacity: mesh.material.opacity,
+        });
+      }
+    }
     scene.add(body, seams);
     return { body, seams };
   };
@@ -1125,6 +1151,11 @@ export function createArenaScene(
     B: makeField('B'),
     R: makeField('R'),
     G: makeField('G'),
+  };
+  const storedBalls = {
+    B: makeField('B', true),
+    R: makeField('R', true),
+    G: makeField('G', true),
   };
   // Each ball's accumulated roll, and whether it was on the mats last frame.
   const rolls = new Map<number, THREE.Euler>();
@@ -1245,7 +1276,7 @@ export function createArenaScene(
     if (rangeRing.visible) placeRange(state.hives.blue.up);
     // Is a HIVE between the follow camera and the robot?
     let hidden = false;
-    if (mode === 'follow') {
+    {
       toScene(
         robotEye,
         state.player.x,
@@ -1260,11 +1291,13 @@ export function createArenaScene(
         sightLine.intersectBox(hiveBox, sightHit) !== null &&
         sightHit.distanceTo(camera.position) < reach;
     }
-    const fade = THREE.MathUtils.damp(hiveFade, hidden ? 0.22 : 1, 8, dt);
+    const fade = THREE.MathUtils.damp(hiveFade, hidden ? 0.12 : 1, 12, dt);
     if (Math.abs(fade - hiveFade) > 0.002) {
       hiveFade = fade;
-      for (const look of hiveLooks)
+      for (const look of hiveLooks) {
         look.material.opacity = look.opacity * hiveFade;
+        look.material.depthWrite = hiveFade > 0.95;
+      }
     }
     const actors = [state.player, state.bot];
     const models = [player, bot];
@@ -1371,6 +1404,7 @@ export function createArenaScene(
       );
     });
     const drawn = { B: 0, R: 0, G: 0 };
+    const storedDrawn = { B: 0, R: 0, G: 0 };
     // A ball poured out of its CELL is on the mats now, not in the CELL. The
     // match only says which ARTIFACT left, so the ball that goes is whichever
     // of its colour sits nearest the opening: nothing vanishes from the back.
@@ -1445,9 +1479,9 @@ export function createArenaScene(
           ballSize.setScalar(radius),
         );
         ballPose.premultiply(cell.inside.matrixWorld);
-        const slot = drawn[key]++;
-        fieldBalls[key].body.setMatrixAt(slot, ballPose);
-        fieldBalls[key].seams.setMatrixAt(slot, ballPose);
+        const slot = storedDrawn[key]++;
+        storedBalls[key].body.setMatrixAt(slot, ballPose);
+        storedBalls[key].seams.setMatrixAt(slot, ballPose);
         return;
       }
       storedSeen.delete(piece.id);
@@ -1505,6 +1539,11 @@ export function createArenaScene(
       body.count = seams.count = drawn[key];
       body.instanceMatrix.needsUpdate = true;
       seams.instanceMatrix.needsUpdate = true;
+      const stored = storedBalls[key];
+      stored.body.count = stored.seams.count = storedDrawn[key];
+      stored.body.instanceMatrix.needsUpdate = true;
+      stored.seams.instanceMatrix.needsUpdate = true;
+      stored.body.castShadow = hiveFade > 0.95;
     }
     for (let i = flights.length - 1; i >= 0; i--) {
       const f = flights[i];
@@ -1546,7 +1585,11 @@ export function createArenaScene(
         state.hives.blue.up,
         loadRange,
       );
-      rangeMaterial.color.copy(rangeColor).multiplyScalar(inRange ? 2.6 : 0.7);
+      rangeMaterial.color
+        .copy(rangeColor)
+        .multiplyScalar(
+          inRange ? (selected.assist === 'range' ? 3.2 : 2.6) : 1.3,
+        );
     }
     // Guides are the assist parts' job alone; each draws only in its own
     // part of the match (see `assistGuides`).
@@ -1596,11 +1639,19 @@ export function createArenaScene(
         : THREE.MathUtils.damp(hiveView, goal, 2.5, dt);
       const view = (key: keyof FollowView) =>
         THREE.MathUtils.lerp(FOLLOW[key], FOLLOW_AT_HIVE[key], hiveView);
-      desiredPosition.set(p.x, view('height'), p.z + view('back'));
+      desiredPosition.set(
+        p.x + Math.sin(cameraYaw) * view('back'),
+        view('height') * cameraLift,
+        p.z + Math.cos(cameraYaw) * view('back'),
+      );
       const smoothing = motion.matches ? 1 : 1 - Math.exp(-6 * dt);
       camera.position.lerp(desiredPosition, smoothing);
       lookAt.lerp(
-        followLook.set(p.x, view('look'), p.z - view('ahead')),
+        followLook.set(
+          p.x - Math.sin(cameraYaw) * view('ahead'),
+          view('look'),
+          p.z - Math.cos(cameraYaw) * view('ahead'),
+        ),
         smoothing,
       );
       camera.lookAt(lookAt);
@@ -1611,7 +1662,25 @@ export function createArenaScene(
   };
   return {
     render,
+    orbitCamera(yaw: number, lift: number) {
+      if (!yaw && !lift) return;
+      cameraYaw += yaw * 1.7;
+      cameraLift = THREE.MathUtils.clamp(cameraLift + lift, 0.55, 2.2);
+      if (mode === 'arena') {
+        const offset = camera.position.clone().sub(cameraTarget);
+        const spherical = new THREE.Spherical().setFromVector3(offset);
+        spherical.theta += yaw * 1.7;
+        spherical.phi = THREE.MathUtils.clamp(spherical.phi - lift, 0.18, 1.25);
+        camera.position
+          .copy(cameraTarget)
+          .add(offset.setFromSpherical(spherical));
+        camera.lookAt(cameraTarget);
+      }
+      stillFrameDrawn = false;
+    },
     setCamera(next: CameraMode) {
+      cameraYaw = 0;
+      cameraLift = 1;
       mode = next;
       stillFrameDrawn = false;
       if (next === 'arena') resetArenaCamera();
@@ -1635,7 +1704,10 @@ export function createArenaScene(
       disposed = true;
       observer.disconnect();
       disposeObject(scene);
-      for (const { body, seams } of Object.values(fieldBalls)) {
+      for (const { body, seams } of [
+        ...Object.values(fieldBalls),
+        ...Object.values(storedBalls),
+      ]) {
         body.dispose();
         seams.dispose();
       }

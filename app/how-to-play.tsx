@@ -14,13 +14,15 @@ import {
   GOAL_TIP_AT,
   NECTAR_TIP_VALUE,
   TIP_POINTS,
+  tipValue,
+  artifactSpace,
 } from './match-guidance';
 
 // A short slideshow of how a match works, shown before the first match and
 // any time after from the briefing. Each slide is one step of a match, with a
 // small diagram of it.
 
-const SEEN_KEY = 'fieldlab-how-to-play-seen';
+const SEEN_KEY = 'fieldlab-how-to-play-seen-v2';
 
 // Whether this browser has already been shown the slideshow. Storage can be
 // blocked (private windows, school policies), in which case it simply shows.
@@ -207,16 +209,76 @@ function SideRobot({ x }: { x: number }) {
   );
 }
 
-type Slide = { title: string; text: ReactNode; art: ReactNode };
+function BallDemo() {
+  const [balls, setBalls] = useState<('P' | 'G')[]>([]);
+  const [wide, setWide] = useState(false);
+  const load = balls.reduce((sum, ball) => sum + tipValue(ball), 0);
+  const slots = balls.reduce(
+    (sum, ball) => sum + artifactSpace(ball, wide ? 'lowbin' : 'pocket'),
+    0,
+  );
+  const tipped = load >= GOAL_TIP_AT;
+  return (
+    <div className="ball-demo">
+      <div className="ball-demo-key">
+        <span>🟡 Yellow: +1 fill</span>
+        <span>🔵 Blue: +{NECTAR_TIP_VALUE} fill</span>
+      </div>
+      <progress
+        aria-label="Goal fill"
+        max={GOAL_TIP_AT}
+        value={Math.min(load, GOAL_TIP_AT)}
+      />
+      <p aria-live="polite">
+        {tipped
+          ? `It tipped! +${TIP_POINTS} points!`
+          : `${load} / ${GOAL_TIP_AT} to tip the goal`}
+      </p>
+      <div className="ball-demo-actions">
+        <Button
+          variant="outline"
+          disabled={tipped}
+          onClick={() => setBalls([...balls, 'G'])}
+        >
+          Add yellow
+        </Button>
+        <Button
+          variant="outline"
+          disabled={tipped}
+          onClick={() => setBalls([...balls, 'P'])}
+        >
+          Add blue
+        </Button>
+        <Button variant="ghost" onClick={() => setBalls([])}>
+          Reset
+        </Button>
+      </div>
+      <label>
+        <input
+          type="checkbox"
+          checked={wide}
+          onChange={(event) => setWide(event.target.checked)}
+        />{' '}
+        Try the wide Low Rider bin
+      </label>
+      <p>
+        This mix uses {slots} storage slots across your trips. Blue balls use{' '}
+        {wide ? 'one slot' : 'two slots'} each with this bin.
+      </p>
+    </div>
+  );
+}
+
+type Slide = { title: string; text: ReactNode; art: ReactNode; demo?: boolean };
 
 const slides: Slide[] = [
   {
     title: 'Drive',
     text: (
       <>
-        Drive with <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the
-        arrow keys, or the arrow pad on a touch screen. Up drives up the screen.{' '}
-        <kbd>Esc</kbd> pauses.
+        Drive with <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, or the
+        touch pad. Use arrow keys to turn and tilt your view. <kbd>Esc</kbd>{' '}
+        pauses.
       </>
     ),
     art: (
@@ -244,8 +306,7 @@ const slides: Slide[] = [
     text: (
       <>
         Drive up to a ball and hold <kbd>Space</kbd> (or ACTION) to pick it up.
-        Yellow POLLEN is anyone&rsquo;s, but only blue NECTAR is yours, and a
-        NECTAR usually fills two storage slots.
+        Pick up yellow and blue balls. Leave red balls for the other robot.
       </>
     ),
     art: (
@@ -282,12 +343,31 @@ const slides: Slide[] = [
     ),
   },
   {
-    title: 'Load the upward CELL',
+    title: 'Mix your balls!',
     text: (
       <>
-        Take them to the blue HIVE. One CELL is tipped up with its opening
-        facing out: stop in front of that opening, close enough to reach, and
-        hold <kbd>Space</kbd> to load it.
+        Blue balls fill the goal faster, but take more room. Try a mix below,
+        then swap the bin to see what changes.
+      </>
+    ),
+    art: (
+      <>
+        <Pollen x={80} y={80} />
+        <Nectar x={160} y={80} />
+        <Nectar x={240} y={80} color={RED} />
+        <text x="240" y="125" textAnchor="middle" fill={INK} fontSize="14">
+          Other team
+        </text>
+      </>
+    ),
+    demo: true,
+  },
+  {
+    title: 'Shoot into the raised basket',
+    text: (
+      <>
+        Find the blue shooting zone by the raised basket. Drive inside it, stop,
+        and hold <kbd>Space</kbd> to shoot. Every shooter can miss!
       </>
     ),
     art: (
@@ -322,9 +402,8 @@ const slides: Slide[] = [
     title: 'Tip the HIVE',
     text: (
       <>
-        At {GOAL_TIP_AT} the HIVE tips for {TIP_POINTS} points: POLLEN counts 1,
-        NECTAR {NECTAR_TIP_VALUE}. The balls pour back out, and the other CELL
-        swings up, so drive round and load that one next.
+        Fill the goal to {GOAL_TIP_AT} to tip it and earn {TIP_POINTS} points!
+        Balls roll back out. Drive around to the other basket and try again.
       </>
     ),
     art: (
@@ -459,6 +538,7 @@ export function HowToPlay({
           </svg>
           <DialogTitle>{slide.title}</DialogTitle>
           <DialogDescription>{slide.text}</DialogDescription>
+          {slide.demo && <BallDemo />}
         </div>
         <div className="how-to-play-nav">
           <Button

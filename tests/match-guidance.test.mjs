@@ -173,13 +173,12 @@ test('Returning to base still takes priority in the final ten seconds', () => {
   assert.equal(playerTarget(state, loadout).kind, 'base');
 });
 
-test('The goal tips at a flat ten, whatever is lying on the mats', () => {
-  assert.equal(GOAL_TIP_AT, 10);
-  // Reachable both ways: seven NECTAR clear it, so do ten POLLEN.
-  const nectar = Array(7)
+test('The goal tips at six: four blue balls or six yellow balls', () => {
+  assert.equal(GOAL_TIP_AT, 6);
+  const nectar = Array(4)
     .fill('P')
     .reduce((t, c) => t + tipValue(c), 0);
-  const yellows = Array(10)
+  const yellows = Array(6)
     .fill('G')
     .reduce((t, c) => t + tipValue(c), 0);
   assert.ok(nectar >= GOAL_TIP_AT);

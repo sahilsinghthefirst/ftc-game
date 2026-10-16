@@ -202,18 +202,22 @@ export type ScoreProfile = {
 // Below this speed a robot counts as stopped.
 export const STOPPED_SPEED = 40;
 
+export function shotMisses(chance: number, random = Math.random) {
+  return random() < chance;
+}
+
 export function scoreProfile(score: string): ScoreProfile {
   // Fastest feed of all, but it only fires from a standstill.
   if (score === 'burst')
-    return { cycle: 0.15, batch: 'one', needsStop: true, miss: 0 };
+    return { cycle: 0.15, batch: 'one', needsStop: true, miss: 0.12 };
   // Shoots on the move, quickly - and one shot in four bounces out.
   if (score === 'flywheel')
     return { cycle: 0.25, batch: 'one', needsStop: false, miss: 0.25 };
   // The whole load at once, from a standstill, then a long reset.
   if (score === 'tiptray')
-    return { cycle: 1.1, batch: 'all', needsStop: true, miss: 0 };
-  // Steady and certain: one at a time, on the move, never misses.
-  return { cycle: 0.45, batch: 'one', needsStop: false, miss: 0 };
+    return { cycle: 1.1, batch: 'all', needsStop: true, miss: 0.08 };
+  // The most reliable option, but no launcher is perfect.
+  return { cycle: 0.45, batch: 'one', needsStop: false, miss: 0.04 };
 }
 
 // Whether the scoring tool will fire right now.
@@ -340,7 +344,7 @@ export function canCarry(carried: string[], color: string, carry: string) {
 // number rather than a share of the field, so adding ARTIFACTS to the mats
 // makes tipping easier rather than moving the bar with them. The NECTAR a
 // CELL starts the match holding counts toward it too.
-export const GOAL_TIP_AT = 10;
+export const GOAL_TIP_AT = 6;
 
 export function goalTips(load: number) {
   return load >= GOAL_TIP_AT;
