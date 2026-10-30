@@ -14,6 +14,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { GraphicsPicker } from './graphics-picker';
 import { mascot } from './mascot';
+import { rivalLevels, type Difficulty } from './rivals';
 import { createArenaScene, type CameraMode } from './arena-scene';
 import { botHeading, createBotMind } from './bot-driver';
 import { createBotStyle } from './bot-style';
@@ -77,7 +78,7 @@ import {
   playerTarget,
 } from './match-guidance';
 
-export type Difficulty = 'rookie' | 'rival' | 'ace';
+export type { Difficulty };
 
 export type MatchResult = {
   playerScore: number;
@@ -745,12 +746,11 @@ export function GameArena({
       }
       const bot = world.bot;
       const redHive = world.hives.red;
+      const rival = rivalLevels[difficulty];
       world.botThink -= dt;
-      const botCapacity = difficulty === 'rookie' ? 2 : 3;
+      const botCapacity = rival.capacity;
       if (world.botThink <= 0) {
-        const thinkRate =
-          difficulty === 'rookie' ? 0.48 : difficulty === 'rival' ? 0.25 : 0.12;
-        world.botThink = thinkRate * world.botStyle.thinking;
+        world.botThink = rival.think * world.botStyle.thinking;
         if (world.time <= world.botStyle.homeAt) {
           world.botTarget = RED_BASE;
           world.botIntent = 'Returning to BASE';
@@ -784,23 +784,13 @@ export function GameArena({
       const heading = botHeading(bot, world.botTarget, botMindRef.current, dt);
       // Real FTC speeds, in inches a second: a cautious rookie robot up to a
       // quick, well-driven one, all a little slower than the fastest bases.
-      const botSpeed =
-        (difficulty === 'rookie' ? 31 : difficulty === 'rival' ? 38 : 45) *
-        INCH *
-        world.botStyle.speed;
+      const botSpeed = rival.speed * INCH * world.botStyle.speed;
       // Scout-7 gets a handling rating of its own, so a tougher rival also
       // corners and stops better instead of only driving faster.
-      const botAccel =
-        difficulty === 'rookie' ? 830 : difficulty === 'rival' ? 1060 : 1340;
-      const botCoast =
-        difficulty === 'rookie' ? 0.82 : difficulty === 'rival' ? 0.7 : 0.58;
+      const botAccel = rival.acceleration;
+      const botCoast = rival.coast;
       if (heading.x !== 0 || heading.y !== 0) {
-        const wobble =
-          difficulty === 'rookie'
-            ? Math.sin(world.time * 2.1) * 0.16
-            : difficulty === 'rival'
-              ? Math.sin(world.time * 2.7) * 0.06
-              : 0;
+        const wobble = Math.sin(world.time * rival.weaveRate) * rival.weave;
         const angle = Math.atan2(heading.y, heading.x) + wobble;
         bot.vx += clamp(
           Math.cos(angle) * botSpeed - bot.vx,
@@ -825,16 +815,8 @@ export function GameArena({
           bot.carried.length > 0
         ) {
           const color = bot.carried.shift()!;
-          const missed = shotMisses(
-            difficulty === 'rookie'
-              ? 0.22
-              : difficulty === 'rival'
-                ? 0.14
-                : 0.08,
-          );
-          bot.cooldown =
-            (difficulty === 'rookie' ? 0.72 : 0.45) *
-            (0.8 + Math.random() * 0.4);
+          const missed = shotMisses(rival.miss);
+          bot.cooldown = rival.loadGap * (0.8 + Math.random() * 0.4);
           const mouth = cellMouth('red', redHive.up);
           if (missed) {
             bounceOut(world, 'bot', color);
@@ -860,7 +842,7 @@ export function GameArena({
             piece.active = false;
             piece.collector = 'bot';
             bot.carried.push(piece.color);
-            bot.cooldown = difficulty === 'rookie' ? 0.62 : 0.33;
+            bot.cooldown = rival.pickupGap;
             emitBurst(
               world,
               piece.x,

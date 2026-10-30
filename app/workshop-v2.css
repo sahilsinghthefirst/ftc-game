@@ -1460,6 +1460,20 @@
   grid-template-columns: minmax(0, 1.38fr) minmax(365px, 0.62fr);
 }
 
+/* One column on narrow screens, the rival list under the brief - the two
+   columns above would otherwise squeeze the brief to a sliver. */
+@media (max-width: 980px) {
+  .briefing-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .briefing-wrap .briefing-side {
+    border-top: 1px solid #bbb3a7;
+    border-left: 0;
+    box-shadow: 0 6px 0 #c9c1b5 inset;
+  }
+}
+
 .briefing-main {
   padding: clamp(42px, 6vw, 82px) clamp(34px, 7vw, 100px);
 }

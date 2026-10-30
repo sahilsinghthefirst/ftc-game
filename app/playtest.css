@@ -79,6 +79,67 @@
   max-width: 34ch;
   margin: 0 auto 24px;
 }
+/* Pick the next rival right here, without going back to the briefing. */
+/* It takes the card's width and no more: the five buttons share it, and
+   wrap onto a second row when the card is too narrow for one. */
+.rival-switch {
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto 22px;
+  padding: 0;
+  border: 0;
+}
+.rival-switch .eyebrow {
+  margin: 0 auto 8px;
+  padding: 0;
+}
+.rival-switch > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+  background: #e7f2ff;
+}
+.rival-switch button {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 72px;
+  min-height: 44px;
+  place-content: center;
+  padding: 6px 10px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #29465c;
+  font-size: 15px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.rival-switch button:hover {
+  background: #f5faff;
+}
+.rival-switch button.is-selected {
+  border-color: #3a7bd5;
+  background: #fff;
+  color: #174f8f;
+}
+.rival-switch button:focus-visible {
+  outline: 3px solid #f2b632;
+  outline-offset: 2px;
+}
+.rival-switch small {
+  color: #b5562f;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.rival-switch > p:last-child {
+  margin: 8px 0 0;
+  color: #4b6578;
+  font-size: 13px;
+}
 .results-screen .result-actions {
   justify-content: center;
   flex-wrap: wrap;
@@ -208,6 +269,11 @@
   .results-screen .final-score > div {
     min-width: 90px;
     padding: 12px;
+  }
+  /* Side by side, wrapping when there is no room: in a column, the 150px
+     basis would make each button 150px tall. */
+  .results-screen .result-actions {
+    flex-direction: row;
   }
   .results-screen .result-actions button {
     flex: 1 1 150px;

@@ -47,6 +47,7 @@ import { AssemblyCategory, PartIllustration } from './assembly-bay';
 import { Difficulty, GameArena, MatchResult } from './game-arena';
 import { HowToPlay, howToPlaySeen } from './how-to-play';
 import { mascot } from './mascot';
+import { RIVALS, rivalLevels } from './rivals';
 import {
   BASE_POINTS,
   NECTAR_TIP_VALUE,
@@ -561,6 +562,18 @@ function handlingNote(handling: number) {
   return 'snaps to speed and stops on a dime';
 }
 
+// Scout-7's levels, easiest first, described from the numbers the match
+// uses. Its speed shifts a little from match to match (see bot-style), so
+// the speeds here are typical ones.
+const difficulties = RIVALS.map((id) => {
+  const level = rivalLevels[id];
+  return {
+    id,
+    name: level.name,
+    note: `About ${(level.speed / 12).toFixed(1)} ft/s, ${level.steering}, holds ${level.capacity} slots`,
+  };
+});
+
 function Briefing({
   selected,
   handling,
@@ -579,23 +592,6 @@ function Briefing({
   const selectedModules = categories.map((category) =>
     modules.find((module) => module.id === selected[category.id])!,
   );
-  const difficulties: { id: Difficulty; name: string; note: string }[] = [
-    {
-      id: 'rookie',
-      name: 'Rookie',
-      note: '2.6 ft/s, weaves as it drives, holds 2 slots',
-    },
-    {
-      id: 'rival',
-      name: 'Rival',
-      note: '3.2 ft/s, steadier steering, holds 3 slots',
-    },
-    {
-      id: 'ace',
-      name: 'Ace',
-      note: '3.75 ft/s, drives straight, holds 3 slots',
-    },
-  ];
   // The slideshow opens by itself before a player's first match.
   const [howToPlay, setHowToPlay] = useState(() => !howToPlaySeen());
 
@@ -729,17 +725,29 @@ function Briefing({
 
 function Results({
   result,
-  selected,
+  difficulty,
+  onDifficulty,
   onWorkshop,
   onRematch,
 }: {
   result: MatchResult;
-  selected: Record<Category, string>;
+  difficulty: Difficulty;
+  onDifficulty: (difficulty: Difficulty) => void;
   onWorkshop: () => void;
   onRematch: () => void;
 }) {
   const won = result.playerScore > result.botScore;
   const tied = result.playerScore === result.botScore;
+  // The rival this match was against, kept while the player picks the next
+  // one. A win points one level up, a loss one level down.
+  const [played] = useState(difficulty);
+  const level = difficulties.findIndex((item) => item.id === played);
+  const suggested = won
+    ? difficulties[level + 1]
+    : tied
+      ? undefined
+      : difficulties[level - 1];
+  const next = difficulties.find((item) => item.id === difficulty)!;
   const verdict = tied
     ? 'A tie! Try a rematch?'
     : won
@@ -794,9 +802,30 @@ function Results({
               ? 'Your robot won this round. Can you beat your score?'
               : 'Try again, or swap a part and see what happens!'}
           </p>
+          <fieldset className="rival-switch">
+            <legend className="eyebrow">NEXT RIVAL</legend>
+            <div>
+              {difficulties.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={difficulty === item.id ? 'is-selected' : ''}
+                  aria-pressed={difficulty === item.id}
+                  onClick={() => onDifficulty(item.id)}
+                >
+                  {item.name}
+                  {item === suggested && (
+                    <small>{won ? 'Harder' : 'Easier'}</small>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p>{next.note}</p>
+          </fieldset>
           <div className="result-actions">
             <Button variant="outline" onClick={onRematch}>
-              <RotateCcw /> Play again
+              <RotateCcw />{' '}
+              {difficulty === played ? 'Play again' : `Play vs ${next.name}`}
             </Button>
             <Button onClick={onWorkshop}>
               Change robot <Wrench />
@@ -1216,7 +1245,7 @@ export function FieldLab() {
           inputSchema: {
             type: 'object',
             properties: {
-              difficulty: { type: 'string', enum: ['rookie', 'rival', 'ace'] },
+              difficulty: { type: 'string', enum: [...RIVALS] },
             },
             required: ['difficulty'],
             additionalProperties: false,
@@ -1224,11 +1253,10 @@ export function FieldLab() {
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute(input) {
             const value = input as { difficulty?: Difficulty };
-            if (
-              !value.difficulty ||
-              !['rookie', 'rival', 'ace'].includes(value.difficulty)
-            )
-              throw new Error('Difficulty must be rookie, rival, or ace.');
+            if (!value.difficulty || !RIVALS.includes(value.difficulty))
+              throw new Error(
+                `Difficulty must be one of ${RIVALS.join(', ')}.`,
+              );
             setDifficulty(value.difficulty);
             setResult(null);
             setPhase('match');
@@ -1248,6 +1276,12 @@ export function FieldLab() {
     return () => lifecycle.abort();
   }, []);
 
+  const startMatch = () =>
+    changeScene(() => {
+      setResult(null);
+      setPhase('match');
+    });
+
   if (phase === 'briefing') {
     return withSceneFade(
       <Briefing
@@ -1255,12 +1289,7 @@ export function FieldLab() {
         handling={traits.handling}
         difficulty={difficulty}
         onDifficulty={setDifficulty}
-        onStart={() =>
-          changeScene(() => {
-            setResult(null);
-            setPhase('match');
-          })
-        }
+        onStart={startMatch}
         onBack={() => setPhase('workshop')}
       />,
     );
@@ -1287,9 +1316,11 @@ export function FieldLab() {
     return withSceneFade(
       <Results
         result={result}
-        selected={selected}
+        difficulty={difficulty}
+        onDifficulty={setDifficulty}
         onWorkshop={() => setPhase('workshop')}
-        onRematch={() => setPhase('briefing')}
+        // Straight into the next match, against whichever rival is picked.
+        onRematch={startMatch}
       />,
     );
   }
